@@ -192,6 +192,91 @@ build_doom() {
     -o ../../doom.js)
 }
 
+build_index() {
+    echo "Building index.{html,js,wasm,data}..."
+    (cd "$(dirname "$0")/src/doom" && $CC \
+    ../system.bc \
+    doomdef.c \
+    doomstat.c \
+    dstrings.c \
+    info.c \
+    sounds.c \
+    statdump.c \
+    am_map.c \
+    d_items.c \
+    d_main.c \
+    deh_ammo.c \
+    deh_bexincl.c \
+    deh_bexpars.c \
+    deh_bexptr.c \
+    deh_bexstr.c \
+    deh_cheat.c \
+    deh_doom.c \
+    deh_frame.c \
+    deh_misc.c \
+    deh_ptr.c \
+    deh_sound.c \
+    deh_thing.c \
+    deh_weapon.c \
+    f_finale.c \
+    f_wipe.c \
+    g_game.c \
+    hu_lib.c \
+    hu_stuff.c \
+    m_menu.c \
+    m_random.c \
+    p_bexptr.c \
+    p_blockmap.c \
+    p_ceilng.c \
+    p_doors.c \
+    p_enemy.c \
+    p_extnodes.c \
+    p_floor.c \
+    p_inter.c \
+    p_lights.c \
+    p_map.c \
+    p_maputl.c \
+    p_mobj.c \
+    p_plats.c \
+    p_pspr.c \
+    p_saveg.c \
+    p_setup.c \
+    p_sight.c \
+    p_spec.c \
+    p_switch.c \
+    p_telept.c \
+    p_tick.c \
+    p_user.c \
+    r_bmaps.c \
+    r_bsp.c \
+    r_data.c \
+    r_draw.c \
+    r_main.c \
+    r_plane.c \
+    r_segs.c \
+    r_sky.c \
+    r_things.c \
+    s_sound.c \
+    st_lib.c \
+    st_stuff.c \
+    wi_stuff.c \
+    -Oz \
+    -Wall \
+    -I. \
+    -I.. \
+    -I../gifenc \
+    -s WASM=1 \
+    -s USE_SDL=2 \
+    -s USE_LIBPNG=1 \
+    -s ASSERTIONS=0 \
+    -s ALLOW_MEMORY_GROWTH=1 \
+    -s NO_EXIT_RUNTIME=1 \
+    -s EXTRA_EXPORTED_RUNTIME_METHODS=['FS'] \
+    --no-heap-copy \
+    --preload-file ../../../doom1.wad@doom1.wad \
+    -o ../../index.html)
+}
+
 for arg in $@; do
 case "$arg" in
   -libsamplerate)
@@ -212,6 +297,10 @@ case "$arg" in
 
   -doom)
     build_doom
+    ;;
+
+  -index)
+    build_index
     ;;
 
   -all)

@@ -48,6 +48,7 @@ STRIFE*.pcx
 *.bc
 *.wasm
 doom.*
+index.*
 *.log
 *.wad
 *.flac

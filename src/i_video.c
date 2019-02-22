@@ -106,7 +106,7 @@ int video_display = 0;
 // Screen width and height, from configuration file.
 
 int window_width = SCREENWIDTH;
-int window_height = SCREENHEIGHT_4_3;
+int window_height = SCREENHEIGHT;
 
 // Fullscreen mode, 0x0 for SDL_WINDOW_FULLSCREEN_DESKTOP.
 
@@ -1090,14 +1090,7 @@ void I_InitGraphics(void)
         fullscreen = true;
     }
 
-    if (aspect_ratio_correct)
-    {
-        actualheight = SCREENHEIGHT_4_3;
-    }
-    else
-    {
-        actualheight = SCREENHEIGHT;
-    }
+    actualheight = SCREENHEIGHT;
 
     // Create the game window; this may switch graphic modes depending
     // on configuration.
