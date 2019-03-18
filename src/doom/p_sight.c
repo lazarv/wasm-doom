@@ -302,8 +302,8 @@ P_CheckSight
 ( mobj_t*	t1,
   mobj_t*	t2 )
 {
-    int		s1;
-    int		s2;
+    sector_t		*s1;
+    sector_t		*s2;
     int		pnum;
     int		bytenum;
     int		bitnum;
@@ -311,9 +311,9 @@ P_CheckSight
     // First check for trivial rejection.
 
     // Determine subsector entries in REJECT table.
-    s1 = (t1->subsector->sector - sectors);
-    s2 = (t2->subsector->sector - sectors);
-    pnum = s1*numsectors + s2;
+    s1 = t1->subsector->sector;
+    s2 = t2->subsector->sector;
+    pnum = s1->id*numsectors + s2->id;
     bytenum = pnum>>3;
     bitnum = 1 << (pnum&7);
 
@@ -325,6 +325,21 @@ P_CheckSight
 	// can't possibly be connected
 	return false;	
     }
+
+    // killough 4/19/98: make fake floors and ceilings block monster view
+
+  if ((s1->heightsec != -1 &&
+       ((t1->z + t1->height <= sectors[s1->heightsec].floorheight &&
+         t2->z >= sectors[s1->heightsec].floorheight) ||
+        (t1->z >= sectors[s1->heightsec].ceilingheight &&
+         t2->z + t1->height <= sectors[s1->heightsec].ceilingheight)))
+      ||
+      (s2->heightsec != -1 &&
+       ((t2->z + t2->height <= sectors[s2->heightsec].floorheight &&
+         t1->z >= sectors[s2->heightsec].floorheight) ||
+        (t2->z >= sectors[s2->heightsec].ceilingheight &&
+         t1->z + t2->height <= sectors[s2->heightsec].ceilingheight))))
+    return false;
 
     // An unobstructed LOS is possible.
     // Now look from eyes of t1 to any part of t2.

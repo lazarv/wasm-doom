@@ -44,6 +44,36 @@ extern byte *tinttable;
 typedef boolean (*vpatchclipfunc_t)(patch_t *, int, int);
 void V_SetPatchClipCallback(vpatchclipfunc_t func);
 
+// Varying bit-depth support -POPE
+//
+// For bilinear filtering, each palette color is pre-weighted and put in a
+// table for fast blending operations. These macros decide how many weights
+// to create for each color. The lower the number, the lower the blend
+// accuracy, which can produce very bad artifacts in texture filtering.
+#define VID_NUMCOLORWEIGHTS 64
+#define VID_COLORWEIGHTMASK (VID_NUMCOLORWEIGHTS-1)
+#define VID_COLORWEIGHTBITS 6
+
+// Palettes for converting from 8 bit color to 16 and 32 bit. Also
+// contains the weighted versions of each palette color for filtering
+// operations
+extern unsigned short *V_Palette15;
+extern unsigned short *V_Palette16;
+extern unsigned int *V_Palette32;
+
+#define VID_PAL15(color, weight) V_Palette15[ (color)*VID_NUMCOLORWEIGHTS + (weight) ]
+#define VID_PAL16(color, weight) V_Palette16[ (color)*VID_NUMCOLORWEIGHTS + (weight) ]
+#define VID_PAL32(color, weight) V_Palette32[ (color)*VID_NUMCOLORWEIGHTS + (weight) ]
+
+// The available bit-depth modes
+typedef enum {
+  VID_MODE8,
+  VID_MODE15,
+  VID_MODE16,
+  VID_MODE32,
+  VID_MODEGL,
+  VID_MODEMAX
+} video_mode_t;
 
 // Allocates buffer screens, call before R_Init.
 void V_Init (void);

@@ -100,10 +100,16 @@ int			viewangletox[FINEANGLES/2];
 // from clipangle to -clipangle.
 angle_t			xtoviewangle[MAXWIDTH+1];
 
+// killough 3/20/98: Support dynamic colormaps, e.g. deep water
+// killough 4/4/98: support dynamic number of them as well
+
+int numcolormaps;
 // [crispy] parameterized for smooth diminishing lighting
 lighttable_t***		scalelight = NULL;
 lighttable_t**		scalelightfixed = NULL;
-lighttable_t***		zlight = NULL;
+lighttable_t****	zlight = NULL;
+lighttable_t***     cm_zlight = NULL;
+lighttable_t*       fullcolormap = NULL;
 
 // bumped light from gun blasts
 int			extralight;			
@@ -681,34 +687,35 @@ void R_InitTextureMapping (void)
 
 void R_InitLightTables (void)
 {
+    int     t;
     int		i;
     int		j;
     int		level;
     int		startmap; 	
     int		scale;
     
-    if (scalelight)
-    {
-	for (i = 0; i < LIGHTLEVELS; i++)
-	{
-		free(scalelight[i]);
-	}
-	free(scalelight);
-    }
+    // if (scalelight)
+    // {
+	// for (i = 0; i < LIGHTLEVELS; i++)
+	// {
+	// 	free(scalelight[i]);
+	// }
+	// free(scalelight);
+    // }
 
-    if (scalelightfixed)
-    {
-	free(scalelightfixed);
-    }
+    // if (scalelightfixed)
+    // {
+	// free(scalelightfixed);
+    // }
 
-    if (zlight)
-    {
-	for (i = 0; i < LIGHTLEVELS; i++)
-	{
-		free(zlight[i]);
-	}
-	free(zlight);
-    }
+    // if (zlight)
+    // {
+	// for (i = 0; i < LIGHTLEVELS; i++)
+	// {
+	// 	free(zlight[i]);
+	// }
+	// free(zlight);
+    // }
 
    // [crispy] smooth diminishing lighting
     // if (crispy->smoothlight)
@@ -734,13 +741,16 @@ void R_InitLightTables (void)
 
     scalelight = malloc(LIGHTLEVELS * sizeof(*scalelight));
     scalelightfixed = malloc(MAXLIGHTSCALE * sizeof(*scalelightfixed));
-    zlight = malloc(LIGHTLEVELS * sizeof(*zlight));
+    zlight = malloc(numcolormaps * sizeof(*zlight));
 
+    for (t=0 ; t< numcolormaps ; t++)
+    {
+    zlight[t] = malloc(LIGHTLEVELS * sizeof(**zlight));
     // Calculate the light levels to use
     //  for each level / distance combination.
     for (i=0 ; i< LIGHTLEVELS ; i++)
     {
-	zlight[i] = malloc(MAXLIGHTZ * sizeof(**zlight));
+	zlight[t][i] = malloc(MAXLIGHTZ * sizeof(***zlight));
 
 	startmap = ((LIGHTLEVELS-LIGHTBRIGHT-i)*2)*NUMCOLORMAPS/LIGHTLEVELS;
 	for (j=0 ; j<MAXLIGHTZ ; j++)
@@ -755,8 +765,9 @@ void R_InitLightTables (void)
 	    if (level >= NUMCOLORMAPS)
 		level = NUMCOLORMAPS-1;
 
-	    zlight[i][j] = colormaps + level*256;
+	    zlight[t][i][j] = colormaps[t] + level*256;
 	}
+    }
     }
 }
 
@@ -885,7 +896,7 @@ void R_ExecuteSetViewSize (void)
 	    if (level >= NUMCOLORMAPS)
 		level = NUMCOLORMAPS-1;
 
-	    scalelight[i][j] = colormaps + level*256;
+	    scalelight[i][j] = colormaps[0] + level*256;
 	}
     }
 }
@@ -950,7 +961,7 @@ R_PointInSubsector
 //
 void R_SetupFrame (player_t* player)
 {		
-    int		i;
+    int		i, cm;
     int		tempCentery;
     
     viewplayer = player;
@@ -974,12 +985,28 @@ void R_SetupFrame (player_t* player)
     viewsin = finesine[viewangle>>ANGLETOFINESHIFT];
     viewcos = finecosine[viewangle>>ANGLETOFINESHIFT];
 	
+    // killough 3/20/98, 4/4/98: select colormap based on player status
+
+    if (player->mo->subsector->sector->heightsec != -1)
+        {
+        sector_t *s = &sectors[player->mo->subsector->sector->heightsec];
+        cm = viewz < s->floorheight ? s->bottommap : viewz > s->ceilingheight ?
+            s->topmap : s->midmap;
+        if (cm < 0 || cm > numcolormaps)
+            cm = 0;
+        }
+    else
+        cm = 0;
+
+    fullcolormap = colormaps[cm];
+    cm_zlight = zlight[0];
+
     sscount = 0;
 	
     if (player->fixedcolormap)
     {
 	fixedcolormap =
-	    colormaps
+	    colormaps[0]
 	    + player->fixedcolormap*256;
 	
 	walllights = scalelightfixed;

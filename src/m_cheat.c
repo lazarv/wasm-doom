@@ -41,6 +41,9 @@ cht_CheckCheat
 
     if (cht->parameter_chars > 0 && strlen(cht->sequence) < cht->sequence_len)
         return false;
+
+    if (cht->chars_read < 0)
+        cht->chars_read = 0;
     
     if (cht->chars_read < strlen(cht->sequence))
     {
@@ -69,7 +72,6 @@ cht_CheckCheat
      && cht->param_chars_read >= cht->parameter_chars)
     {
         cht->chars_read = cht->param_chars_read = 0;
-
         return true;
     }
     

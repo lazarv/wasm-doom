@@ -170,7 +170,7 @@ R_MapPlane
 	    index = MAXLIGHTZ-1;
 
 	ds_colormap[0] = planezlight[index];
-	ds_colormap[1] = zlight[LIGHTLEVELS-1][MAXLIGHTZ-1];
+	ds_colormap[1] = cm_zlight[LIGHTLEVELS-1][MAXLIGHTZ-1];
     }
 	
     ds_y = y;
@@ -476,15 +476,15 @@ void R_DrawPlanes (void)
 #ifdef RANGECHECK
     if (ds_p - drawsegs > numdrawsegs)
 	I_Error ("R_DrawPlanes: drawsegs overflow (%" PRIiPTR ")",
-		 ds_p - drawsegs);
+		 (unsigned int)(ds_p - drawsegs));
     
     if (lastvisplane - visplanes > numvisplanes)
 	I_Error ("R_DrawPlanes: visplane overflow (%" PRIiPTR ")",
-		 lastvisplane - visplanes);
+		 (unsigned int)(lastvisplane - visplanes));
     
     if (lastopening - openings > MAXOPENINGS)
 	I_Error ("R_DrawPlanes: opening overflow (%" PRIiPTR ")",
-		 lastopening - openings);
+		 (unsigned int)(lastopening - openings));
 #endif
 
     for (pl = visplanes ; pl < lastvisplane ; pl++)
@@ -524,7 +524,7 @@ void R_DrawPlanes (void)
 	    // Because of this hack, sky is not affected
 	    //  by INVUL inverse mapping.
 	    // [crispy] no brightmaps for sky
-	    dc_colormap[0] = dc_colormap[1] = colormaps;
+	    dc_colormap[0] = dc_colormap[1] = fullcolormap;
 	    dc_texheight = textureheight[texture]>>FRACBITS; // [crispy] Tutti-Frutti fix
 	    
 	    for (x=pl->minx ; x <= pl->maxx ; x++)
@@ -558,7 +558,7 @@ void R_DrawPlanes (void)
 	if (light < 0)
 	    light = 0;
 
-	planezlight = zlight[light];
+	planezlight = cm_zlight[light];
 
 	pl->top[pl->maxx+1] = 0xffffffffu; // [crispy] hires / 32-bit integer math
 	pl->top[pl->minx-1] = 0xffffffffu; // [crispy] hires / 32-bit integer math

@@ -43,6 +43,9 @@
 // status bar height at bottom of screen
 #define SBARHEIGHT		32
 
+extern lighttable_t* fullcolormap;
+extern lighttable_t*** cm_zlight;
+
 //
 // Separate header file for each module.
 //

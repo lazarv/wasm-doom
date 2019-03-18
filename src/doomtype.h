@@ -23,6 +23,16 @@
 
 #include "config.h"
 
+#ifndef MAX
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#endif
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif
+#ifndef BETWEEN
+#define BETWEEN(l,u,x) ((l)>(x)?(l):(x)>(u)?(u):(x))
+#endif
+
 #if defined(_MSC_VER) && !defined(__cplusplus)
 #define inline __inline
 #endif

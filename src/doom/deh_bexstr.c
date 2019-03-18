@@ -104,6 +104,9 @@ static const bex_string_t bex_stringtable[] = {
     {"PD_BLUEK", PD_BLUEK},
     {"PD_REDK", PD_REDK},
     {"PD_YELLOWK", PD_YELLOWK},
+    {"PD_ANY", PD_ANY},
+    {"PD_ALL3", PD_ALL3},
+    {"PD_ALL6", PD_ALL6},
     // part 4 - multiplayer messaging
     {"HUSTR_MSGU", HUSTR_MSGU},
     {"HUSTR_MESSAGESENT", HUSTR_MESSAGESENT},

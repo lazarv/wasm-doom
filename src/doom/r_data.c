@@ -126,7 +126,8 @@ struct texture_s
     texpatch_t	patches[1];		
 };
 
-
+// killough 4/17/98: make firstcolormaplump,lastcolormaplump external
+int firstcolormaplump, lastcolormaplump;      // killough 4/17/98
 
 int		firstflat;
 int		lastflat;
@@ -164,7 +165,7 @@ fixed_t*	spritewidth;
 fixed_t*	spriteoffset;
 fixed_t*	spritetopoffset;
 
-lighttable_t	*colormaps;
+lighttable_t	**colormaps;
 
 
 //
@@ -1056,18 +1057,31 @@ void R_InitTranMap()
 //
 void R_InitColormaps (void)
 {
-    int	lump;
-
     // Load in the light tables, 
     //  256 byte align tables.
-    lump = W_GetNumForName(DEH_String("COLORMAP"));
-    colormaps = W_CacheLumpNum(lump, PU_STATIC);
+
+	int i;
+	if (W_CheckNumForName("C_START") != -1)
+	{
+	firstcolormaplump = W_GetNumForName("C_START");
+	lastcolormaplump  = W_GetNumForName("C_END");
+	numcolormaps = lastcolormaplump - firstcolormaplump;
+	}
+	else
+	{
+	numcolormaps = 1;
+	}
+	
+	colormaps = Z_Malloc(sizeof(*colormaps) * numcolormaps, PU_STATIC, 0);
+	colormaps[0] = (lighttable_t *)W_CacheLumpName("COLORMAP", PU_STATIC);
+	for (i=1; i<numcolormaps; i++)
+		colormaps[i] = (lighttable_t *)W_CacheLumpNum(i+firstcolormaplump, PU_STATIC);
 
     // [crispy] initialize color translation and color strings tables
     {
 	byte *playpal = W_CacheLumpName("PLAYPAL", PU_STATIC);
 	char c[3];
-	int i, j;
+	int j;
 	boolean keepgray = false;
 	extern byte V_Colorize (byte *playpal, int cr, byte source, boolean keepgray109);
 
@@ -1097,7 +1111,18 @@ void R_InitColormaps (void)
 	tinttable = cr[CR_DARK];
 }
 
+// killough 4/4/98: get colormap number from name
+// killough 4/11/98: changed to return -1 for illegal names
+// killough 4/17/98: changed to use ns_colormaps tag
 
+int R_ColormapNumForName(const char *name)
+{
+  int i = 0;
+  if (strncasecmp(name,"COLORMAP",8))     // COLORMAP predefined to return 0
+    if ((i = W_CheckNumForName(name)) != -1)
+      i -= firstcolormaplump;
+  return i;
+}
 
 //
 // R_InitData

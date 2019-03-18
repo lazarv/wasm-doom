@@ -23,6 +23,9 @@
 #include "deh_main.h"
 #include "doomdef.h"
 #include "p_local.h"
+#include "i_swap.h" // [crispy] SHORT()
+#include "w_wad.h" // [crispy] W_CheckNumForName()
+#include "z_zone.h" // [crispy] Z_ChangeTag()
 
 #include "g_game.h"
 
@@ -39,7 +42,8 @@
 //
 // CHANGE THE TEXTURE OF A WALL SWITCH TO ITS OPPOSITE
 //
-switchlist_t alphSwitchList[] =
+// [crispy] add support for SWITCHES lumps
+switchlist_t alphSwitchList_vanilla[] =
 {
     // Doom shareware episode 1 switches
     {"SW1BRCOM",	"SW2BRCOM",	1},
@@ -86,11 +90,17 @@ switchlist_t alphSwitchList[] =
     {"SW1TEK",		"SW2TEK",	3},
     {"SW1MARB",	"SW2MARB",	3},
     {"SW1SKULL",	"SW2SKULL",	3},
+
+    // [crispy] SWITCHES lumps are supposed to end like this
+    {"\0",		"\0",		0}
 };
 
-int		switchlist[MAXSWITCHES * 2];
+// [crispy] remove MAXSWITCHES limit
+int		*switchlist;
 int		numswitches;
-button_t        buttonlist[MAXBUTTONS];
+static size_t	maxswitches;
+button_t        *buttonlist; // [crispy] remove MAXBUTTONS limit
+int		maxbuttons; // [crispy] remove MAXBUTTONS limit
 
 //
 // P_InitSwitchList
@@ -99,6 +109,19 @@ button_t        buttonlist[MAXBUTTONS];
 void P_InitSwitchList(void)
 {
     int i, slindex, episode;
+
+    // [crispy] add support for SWITCHES lumps
+    switchlist_t *alphSwitchList;
+    boolean from_lump;
+
+    if ((from_lump = (W_CheckNumForName("SWITCHES") != -1)))
+    {
+	alphSwitchList = W_CacheLumpName("SWITCHES", PU_STATIC);
+    }
+    else
+    {
+	alphSwitchList = alphSwitchList_vanilla;
+    }
 
     // Note that this is called "episode" here but it's actually something
     // quite different. As we progress from Shareware->Registered->Doom II
@@ -119,9 +142,21 @@ void P_InitSwitchList(void)
 
     slindex = 0;
 
-    for (i = 0; i < arrlen(alphSwitchList); i++)
+    for (i = 0; alphSwitchList[i].episode; i++)
     {
-	if (alphSwitchList[i].episode <= episode)
+	const short alphSwitchList_episode = from_lump ?
+	    SHORT(alphSwitchList[i].episode) :
+	    alphSwitchList[i].episode;
+
+	// [crispy] remove MAXSWITCHES limit
+	if (slindex + 1 >= maxswitches)
+	{
+	    size_t newmax = maxswitches ? 2 * maxswitches : MAXSWITCHES;
+	    switchlist = I_Realloc(switchlist, newmax * sizeof(*switchlist));
+	    maxswitches = newmax;
+	}
+
+	if (alphSwitchList_episode <= episode)
 	{
 	    switchlist[slindex++] =
                 R_TextureNumForName(DEH_String(alphSwitchList[i].name1));
@@ -132,6 +167,16 @@ void P_InitSwitchList(void)
 
     numswitches = slindex / 2;
     switchlist[slindex] = -1;
+
+    // [crispy] add support for SWITCHES lumps
+    if (from_lump)
+    {
+	Z_ChangeTag(alphSwitchList, PU_CACHE);
+    }
+
+    // [crispy] pre-allocate some memory for the buttonlist[] array
+    buttonlist = I_Realloc(NULL, sizeof(*buttonlist) * (maxbuttons = MAXBUTTONS));
+    memset(buttonlist, 0, sizeof(*buttonlist) * maxbuttons);
 }
 
 
@@ -148,19 +193,23 @@ P_StartButton
     int		i;
     
     // See if button is already pressed
-    for (i = 0;i < MAXBUTTONS;i++)
+    for (i = 0;i < maxbuttons;i++)
     {
 	if (buttonlist[i].btimer
 	    && buttonlist[i].line == line)
 	{
 	    
+	  // [crispy] register up to three buttons at once for lines with more than one switch texture
+	  if (buttonlist[i].where == w)
+	  {
 	    return;
+	  }
 	}
     }
     
 
     
-    for (i = 0;i < MAXBUTTONS;i++)
+    for (i = 0;i < maxbuttons;i++)
     {
 	if (!buttonlist[i].btimer)
 	{
@@ -168,11 +217,19 @@ P_StartButton
 	    buttonlist[i].where = w;
 	    buttonlist[i].btexture = texture;
 	    buttonlist[i].btimer = time;
-	    buttonlist[i].soundorg = &line->frontsector->soundorg;
+	    buttonlist[i].soundorg = &line->soundorg; // [crispy] corrected sound source
 	    return;
 	}
     }
     
+    // [crispy] remove MAXBUTTONS limit
+    {
+	maxbuttons = 2 * maxbuttons;
+	buttonlist = I_Realloc(buttonlist, sizeof(*buttonlist) * maxbuttons);
+	memset(buttonlist + maxbuttons/2, 0, sizeof(*buttonlist) * maxbuttons/2);
+	return P_StartButton(line, w, texture, time);
+    }
+
     I_Error("P_StartButton: no button slots left!");
 }
 
@@ -212,37 +269,39 @@ P_ChangeSwitchTexture
     {
 	if (switchlist[i] == texTop)
 	{
-	    S_StartSound(buttonlist->soundorg,sound);
+	    S_StartSoundOnce(&line->soundorg,sound); // [crispy] corrected sound source
 	    sides[line->sidenum[0]].toptexture = switchlist[i^1];
 
 	    if (useAgain)
 		P_StartButton(line,top,switchlist[i],BUTTONTIME);
 
-	    return;
+//	    return;
 	}
-	else
+	// [crispy] register up to three buttons at once for lines with more than one switch texture
+//	else
 	{
 	    if (switchlist[i] == texMid)
 	    {
-		S_StartSound(buttonlist->soundorg,sound);
+		S_StartSoundOnce(&line->soundorg,sound); // [crispy] corrected sound source
 		sides[line->sidenum[0]].midtexture = switchlist[i^1];
 
 		if (useAgain)
 		    P_StartButton(line, middle,switchlist[i],BUTTONTIME);
 
-		return;
+//		return;
 	    }
-	    else
+	    // [crispy] register up to three buttons at once for lines with more than one switch texture
+//	    else
 	    {
 		if (switchlist[i] == texBot)
 		{
-		    S_StartSound(buttonlist->soundorg,sound);
+		    S_StartSoundOnce(&line->soundorg,sound); // [crispy] corrected sound source
 		    sides[line->sidenum[0]].bottomtexture = switchlist[i^1];
 
 		    if (useAgain)
 			P_StartButton(line, bottom,switchlist[i],BUTTONTIME);
 
-		    return;
+//		    return;
 		}
 	    }
 	}
@@ -283,6 +342,108 @@ P_UseSpecialLine
 	}
     }
 
+	// pointer to line function is NULL by default, set non-null if
+    // line special is push or switch generalized linedef type
+    int (*linefunc)(line_t *line)=NULL;
+
+    // check each range of generalized linedefs
+    if ((unsigned)line->special >= GenEnd)
+    {
+      // Out of range for GenFloors
+    }
+    else if ((unsigned)line->special >= GenFloorBase)
+    {
+      if (!thing->player)
+        if ((line->special & FloorChange) || !(line->special & FloorModel))
+          return false; // FloorModel is "Allow Monsters" if FloorChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenFloor;
+    }
+    else if ((unsigned)line->special >= GenCeilingBase)
+    {
+      if (!thing->player)
+        if ((line->special & CeilingChange) || !(line->special & CeilingModel))
+          return false;   // CeilingModel is "Allow Monsters" if CeilingChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenCeiling;
+    }
+    else if ((unsigned)line->special >= GenDoorBase)
+    {
+      if (!thing->player)
+      {
+        if (!(line->special & DoorMonster))
+          return false;   // monsters disallowed from this door
+        if (line->flags & ML_SECRET) // they can't open secret doors either
+          return false;
+      }
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 3/2/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenDoor;
+    }
+    else if ((unsigned)line->special >= GenLockedBase)
+    {
+      if (!thing->player)
+        return false;   // monsters disallowed from unlocking doors
+      if (!P_CanUnlockGenDoor(line,thing->player))
+        return false;
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+
+      linefunc = EV_DoGenLockedDoor;
+    }
+    else if ((unsigned)line->special >= GenLiftBase)
+    {
+      if (!thing->player)
+        if (!(line->special & LiftMonster))
+          return false; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenLift;
+    }
+    else if ((unsigned)line->special >= GenStairsBase)
+    {
+      if (!thing->player)
+        if (!(line->special & StairMonster))
+          return false; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenStairs;
+    }
+    else if ((unsigned)line->special >= GenCrusherBase)
+    {
+      if (!thing->player)
+        if (!(line->special & CrusherMonster))
+          return false; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return false;                         // generalized types require tag
+      linefunc = EV_DoGenCrusher;
+    }
+
+    if (linefunc)
+      switch((line->special & TriggerType) >> TriggerTypeShift)
+      {
+        case PushOnce:
+          if (!side)
+            if (linefunc(line))
+              line->special = 0;
+          return true;
+        case PushMany:
+          if (!side)
+            linefunc(line);
+          return true;
+        case SwitchOnce:
+          if (linefunc(line))
+            P_ChangeSwitchTexture(line,0);
+          return true;
+        case SwitchMany:
+          if (linefunc(line))
+            P_ChangeSwitchTexture(line,1);
+          return true;
+        default:  // if not a switch/push type, do nothing here
+          return false;
+      }
     
     // Switches that other things can activate.
     if (!thing->player)
@@ -387,7 +548,7 @@ P_UseSpecialLine
 	
       case 29:
 	// Raise Door
-	if (EV_DoDoor(line,vld_normal))
+	if (EV_DoDoor(line,normal))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
@@ -411,7 +572,7 @@ P_UseSpecialLine
 	
       case 50:
 	// Close Door
-	if (EV_DoDoor(line,vld_close))
+	if (EV_DoDoor(line,closeDoor))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
@@ -441,25 +602,25 @@ P_UseSpecialLine
 	
       case 103:
 	// Open Door
-	if (EV_DoDoor(line,vld_open))
+	if (EV_DoDoor(line,openDoor))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
       case 111:
 	// Blazing Door Raise (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeRaise))
+	if (EV_DoDoor (line,blazeRaise))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
       case 112:
 	// Blazing Door Open (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeOpen))
+	if (EV_DoDoor (line,blazeOpen))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
       case 113:
 	// Blazing Door Close (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeClose))
+	if (EV_DoDoor (line,blazeClose))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
@@ -487,7 +648,7 @@ P_UseSpecialLine
 	// BlzOpenDoor RED
       case 137:
 	// BlzOpenDoor YELLOW
-	if (EV_DoLockedDoor (line,vld_blazeOpen,thing))
+	if (EV_DoLockedDoor (line,blazeOpen,thing))
 	    P_ChangeSwitchTexture(line,0);
 	break;
 	
@@ -500,7 +661,7 @@ P_UseSpecialLine
 	// BUTTONS
       case 42:
 	// Close Door
-	if (EV_DoDoor(line,vld_close))
+	if (EV_DoDoor(line,closeDoor))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
@@ -524,7 +685,7 @@ P_UseSpecialLine
 	
       case 61:
 	// Open Door
-	if (EV_DoDoor(line,vld_open))
+	if (EV_DoDoor(line,openDoor))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
@@ -536,7 +697,7 @@ P_UseSpecialLine
 	
       case 63:
 	// Raise Door
-	if (EV_DoDoor(line,vld_normal))
+	if (EV_DoDoor(line,normal))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
@@ -584,19 +745,19 @@ P_UseSpecialLine
 	
       case 114:
 	// Blazing Door Raise (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeRaise))
+	if (EV_DoDoor (line,blazeRaise))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
       case 115:
 	// Blazing Door Open (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeOpen))
+	if (EV_DoDoor (line,blazeOpen))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
       case 116:
 	// Blazing Door Close (faster than TURBO!)
-	if (EV_DoDoor (line,vld_blazeClose))
+	if (EV_DoDoor (line,blazeClose))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	
@@ -618,7 +779,7 @@ P_UseSpecialLine
 	// BlzOpenDoor RED
       case 136:
 	// BlzOpenDoor YELLOW
-	if (EV_DoLockedDoor (line,vld_blazeOpen,thing))
+	if (EV_DoLockedDoor (line,blazeOpen,thing))
 	    P_ChangeSwitchTexture(line,1);
 	break;
 	

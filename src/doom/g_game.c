@@ -88,7 +88,7 @@ void	G_DoReborn (int playernum);
  
 void	G_DoLoadLevel (void); 
 void	G_DoNewGame (void); 
-void	G_DoPlayDemo (void); 
+boolean	G_DoPlayDemo (void); 
 void	G_DoCompleted (void); 
 void	G_DoVictory (void); 
 void	G_DoWorldDone (void); 
@@ -887,7 +887,8 @@ void G_Ticker (void)
 	    G_DoSaveGame (); 
 	    break; 
 	  case ga_playdemo: 
-	    G_DoPlayDemo (); 
+	    if ( !G_DoPlayDemo () )
+            D_AdvanceDemo(); 
 	    break; 
 	  case ga_completed: 
 	    G_DoCompleted (); 
@@ -2046,38 +2047,6 @@ void G_ReadDemoTiccmd (ticcmd_t* cmd)
     cmd->buttons = (unsigned char)*demo_p++; 
 } 
 
-// Increase the size of the demo buffer to allow unlimited demos
-
-static void IncreaseDemoBuffer(void)
-{
-    int current_length;
-    byte *new_demobuffer;
-    byte *new_demop;
-    int new_length;
-
-    // Find the current size
-
-    current_length = demoend - demobuffer;
-    
-    // Generate a new buffer twice the size
-    new_length = current_length * 2;
-    
-    new_demobuffer = Z_Malloc(new_length, PU_STATIC, 0);
-    new_demop = new_demobuffer + (demo_p - demobuffer);
-
-    // Copy over the old data
-
-    memcpy(new_demobuffer, demobuffer, current_length);
-
-    // Free the old buffer and point the demo pointers at the new buffer.
-
-    Z_Free(demobuffer);
-
-    demobuffer = new_demobuffer;
-    demo_p = new_demop;
-    demoend = demobuffer + new_length;
-}
-
 void G_WriteDemoTiccmd (ticcmd_t* cmd) 
 { 
 } 
@@ -2185,50 +2154,9 @@ void G_DeferedPlayDemo(const char *name)
 { 
     defdemoname = name; 
     gameaction = ga_playdemo; 
-} 
-
-// Generate a string describing a demo version
-
-static char *DemoVersionDescription(int version)
-{
-    static char resultbuf[16];
-
-    switch (version)
-    {
-        case 104:
-            return "v1.4";
-        case 105:
-            return "v1.5";
-        case 106:
-            return "v1.6/v1.666";
-        case 107:
-            return "v1.7/v1.7a";
-        case 108:
-            return "v1.8";
-        case 109:
-            return "v1.9";
-        case 111:
-            return "v1.91 hack demo?";
-        default:
-            break;
-    }
-
-    // Unknown version.  Perhaps this is a pre-v1.4 IWAD?  If the version
-    // byte is in the range 0-4 then it can be a v1.0-v1.2 demo.
-
-    if (version >= 0 && version <= 4)
-    {
-        return "v1.0/v1.1/v1.2";
-    }
-    else
-    {
-        M_snprintf(resultbuf, sizeof(resultbuf),
-                   "%i.%i (unknown)", version / 100, version % 100);
-        return resultbuf;
-    }
 }
 
-void G_DoPlayDemo (void)
+boolean G_DoPlayDemo (void)
 {
     skill_t skill;
     int i, lumpnum, episode, map;
@@ -2252,17 +2180,18 @@ void G_DoPlayDemo (void)
     }
     else if (demoversion != G_VanillaVersionCode())
     {
-        char *message = "Demo is from a different game version!\n"
-                        "(read %i, should be %i)\n"
-                        "\n"
-                        "*** You may need to upgrade your version "
-                            "of Doom to v1.9. ***\n"
-                        "    See: https://www.doomworld.com/classicdoom"
-                                  "/info/patches.php\n"
-                        "    This appears to be %s.";
+        // char *message = "Demo is from a different game version!\n"
+        //                 "(read %i, should be %i)\n"
+        //                 "\n"
+        //                 "*** You may need to upgrade your version "
+        //                     "of Doom to v1.9. ***\n"
+        //                 "    See: https://www.doomworld.com/classicdoom"
+        //                           "/info/patches.php\n"
+        //                 "    This appears to be %s.";
 
-        I_Error(message, demoversion, G_VanillaVersionCode(),
-                         DemoVersionDescription(demoversion));
+        // I_Error(message, demoversion, G_VanillaVersionCode(),
+        //                  DemoVersionDescription(demoversion));
+        return false;
     }
 
     skill = *demo_p++; 
@@ -2292,6 +2221,8 @@ void G_DoPlayDemo (void)
 
     usergame = false; 
     demoplayback = true; 
+
+    return true;
 } 
 
 //

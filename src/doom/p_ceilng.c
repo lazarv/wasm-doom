@@ -184,14 +184,14 @@ EV_DoCeiling
     while ((secnum = P_FindSectorFromLineTag(line,secnum)) >= 0)
     {
 	sec = &sectors[secnum];
-	if (sec->specialdata)
+	if (sec->ceilingdata)
 	    continue;
 	
 	// new door thinker
 	rtn = 1;
 	ceiling = Z_Malloc (sizeof(*ceiling), PU_LEVSPEC, 0);
 	P_AddThinker (&ceiling->thinker);
-	sec->specialdata = ceiling;
+	sec->ceilingdata = ceiling;
 	ceiling->thinker.function.acp1 = (actionf_p1)T_MoveCeiling;
 	ceiling->sector = sec;
 	ceiling->crush = false;
@@ -264,7 +264,7 @@ void P_RemoveActiveCeiling(ceiling_t* c)
     {
 	if (activeceilings[i] == c)
 	{
-	    activeceilings[i]->sector->specialdata = NULL;
+	    activeceilings[i]->sector->ceilingdata = NULL;
 	    P_RemoveThinker (&activeceilings[i]->thinker);
 	    activeceilings[i] = NULL;
 	    break;
@@ -277,9 +277,10 @@ void P_RemoveActiveCeiling(ceiling_t* c)
 //
 // Restart a ceiling that's in-stasis
 //
-void P_ActivateInStasisCeiling(line_t* line)
+int P_ActivateInStasisCeiling(line_t* line)
 {
     int		i;
+	int		rtn = 0;
 	
     for (i = 0;i < MAXCEILINGS;i++)
     {
@@ -290,8 +291,11 @@ void P_ActivateInStasisCeiling(line_t* line)
 	    activeceilings[i]->direction = activeceilings[i]->olddirection;
 	    activeceilings[i]->thinker.function.acp1
 	      = (actionf_p1)T_MoveCeiling;
+		rtn = 1;
 	}
     }
+
+	return rtn;
 }
 
 

@@ -258,6 +258,109 @@ void R_MaybeInterpolateSector(sector_t* sector)
 }
 
 //
+// killough 3/7/98: Hack floor/ceiling heights for deep water etc.
+//
+// If player's view height is underneath fake floor, lower the
+// drawn ceiling to be just under the floor height, and replace
+// the drawn floor and ceiling textures, and light level, with
+// the control sector's.
+//
+// Similar for ceiling, only reflected.
+//
+// killough 4/11/98, 4/13/98: fix bugs, add 'back' parameter
+//
+
+sector_t *R_FakeFlat(sector_t *sec, sector_t *tempsec,
+                     int *floorlightlevel, int *ceilinglightlevel,
+                     boolean back)
+{
+  if (floorlightlevel)
+    *floorlightlevel = sec->floorlightsec == -1 ?
+      sec->lightlevel : sectors[sec->floorlightsec].lightlevel;
+
+  if (ceilinglightlevel)
+    *ceilinglightlevel = sec->ceilinglightsec == -1 ? // killough 4/11/98
+      sec->lightlevel : sectors[sec->ceilinglightsec].lightlevel;
+
+  if (sec->heightsec != -1)
+    {
+      const sector_t *s = &sectors[sec->heightsec];
+      int heightsec = viewplayer->mo->subsector->sector->heightsec;
+      int underwater = heightsec!=-1 && viewz<=sectors[heightsec].floorheight;
+
+      // Replace sector being drawn, with a copy to be hacked
+      *tempsec = *sec;
+
+      // Replace floor and ceiling height with other sector's heights.
+      tempsec->floorheight   = s->floorheight;
+      tempsec->ceilingheight = s->ceilingheight;
+
+      // killough 11/98: prevent sudden light changes from non-water sectors:
+      if (underwater && (tempsec->  floorheight = sec->floorheight,
+                          tempsec->ceilingheight = s->floorheight-1, !back))
+        {                   // head-below-floor hack
+          tempsec->floorpic    = s->floorpic;
+          tempsec->floor_xoffs = s->floor_xoffs;
+          tempsec->floor_yoffs = s->floor_yoffs;
+
+          if (underwater) {
+            if (s->ceilingpic == skyflatnum) {
+		tempsec->floorheight   = tempsec->ceilingheight+1;
+		tempsec->ceilingpic    = tempsec->floorpic;
+                tempsec->ceiling_xoffs = tempsec->floor_xoffs;
+                tempsec->ceiling_yoffs = tempsec->floor_yoffs;
+	    } else {
+		tempsec->ceilingpic    = s->ceilingpic;
+		tempsec->ceiling_xoffs = s->ceiling_xoffs;
+		tempsec->ceiling_yoffs = s->ceiling_yoffs;
+	    }
+	  }
+
+          tempsec->lightlevel  = s->lightlevel;
+
+          if (floorlightlevel)
+            *floorlightlevel = s->floorlightsec == -1 ? s->lightlevel :
+            sectors[s->floorlightsec].lightlevel; // killough 3/16/98
+
+          if (ceilinglightlevel)
+            *ceilinglightlevel = s->ceilinglightsec == -1 ? s->lightlevel :
+            sectors[s->ceilinglightsec].lightlevel; // killough 4/11/98
+        }
+      else
+        if (heightsec != -1 && viewz >= sectors[heightsec].ceilingheight &&
+            sec->ceilingheight > s->ceilingheight)
+          {   // Above-ceiling hack
+            tempsec->ceilingheight = s->ceilingheight;
+            tempsec->floorheight   = s->ceilingheight + 1;
+
+            tempsec->floorpic    = tempsec->ceilingpic    = s->ceilingpic;
+            tempsec->floor_xoffs = tempsec->ceiling_xoffs = s->ceiling_xoffs;
+            tempsec->floor_yoffs = tempsec->ceiling_yoffs = s->ceiling_yoffs;
+
+            if (s->floorpic != skyflatnum)
+              {
+                tempsec->ceilingheight = sec->ceilingheight;
+                tempsec->floorpic      = s->floorpic;
+                tempsec->floor_xoffs   = s->floor_xoffs;
+                tempsec->floor_yoffs   = s->floor_yoffs;
+              }
+
+            tempsec->lightlevel  = s->lightlevel;
+
+            if (floorlightlevel)
+              *floorlightlevel = s->floorlightsec == -1 ? s->lightlevel :
+              sectors[s->floorlightsec].lightlevel; // killough 3/16/98
+
+            if (ceilinglightlevel)
+              *ceilinglightlevel = s->ceilinglightsec == -1 ? s->lightlevel :
+              sectors[s->ceilinglightsec].lightlevel; // killough 4/11/98
+          }
+      sec = tempsec;               // Use other sector
+    }
+  return sec;
+}
+
+//
 // R_AddLine
 // Clips the given segment
 // and adds any visible pieces to the line list.
@@ -270,7 +373,8 @@ void R_AddLine (seg_t*	line)
     angle_t		angle2;
     angle_t		span;
     angle_t		tspan;
-    
+    sector_t    tempsec;     // killough 3/8/98: ceiling/water hack
+
     curline = line;
 
     // OPTIMIZE: quickly reject orthogonal back sides.
@@ -329,6 +433,11 @@ void R_AddLine (seg_t*	line)
     // Single sided line?
     if (!backsector)
 	goto clipsolid;		
+
+    // Single sided line?
+    if (backsector)
+        // killough 3/8/98, 4/4/98: hack for invisible ceilings / deep water
+        backsector = R_FakeFlat(backsector, &tempsec, NULL, NULL, true);
 
     // [AM] Interpolate sector movement before
     //      running clipping tests.  Frontsector
@@ -498,8 +607,6 @@ boolean R_CheckBBox (fixed_t*	bspcoord)
     return true;
 }
 
-
-
 //
 // R_Subsector
 // Determine floor/ceiling planes.
@@ -511,6 +618,10 @@ void R_Subsector (int num)
     int			count;
     seg_t*		line;
     subsector_t*	sub;
+
+    sector_t    tempsec;              // killough 3/7/98: deep water hack
+    int         floorlightlevel;      // killough 3/16/98: set floor lightlevel
+    int         ceilinglightlevel;    // killough 4/11/98
 	
 #ifdef RANGECHECK
     if (num>=numsubsectors)
@@ -522,6 +633,11 @@ void R_Subsector (int num)
     sscount++;
     sub = &subsectors[num];
     frontsector = sub->sector;
+
+    // killough 3/8/98, 4/4/98: Deep water / fake ceiling effect
+    frontsector = R_FakeFlat(frontsector, &tempsec, &floorlightlevel,
+      &ceilinglightlevel, false);   // killough 4/11/98
+
     count = sub->numlines;
     line = &segs[sub->firstline];
 
@@ -529,30 +645,55 @@ void R_Subsector (int num)
     //      when you're standing inside the sector.
     R_MaybeInterpolateSector(frontsector);
 
-    if (frontsector->interpfloorheight < viewz)
-    {
-	floorplane = R_FindPlane(frontsector->interpfloorheight,
-				  // [crispy] add support for MBF sky tranfers
-				  frontsector->floorpic == skyflatnum &&
-				  frontsector->sky & PL_SKYFLAT ? frontsector->sky :
-				  frontsector->floorpic,
-				  frontsector->lightlevel);
-    }
-    else
-	floorplane = NULL;
+    floorplane = frontsector->floorheight < viewz || // killough 3/7/98
+      (frontsector->heightsec != -1 &&
+       sectors[frontsector->heightsec].ceilingpic == skyflatnum) ?
+      R_FindPlane(frontsector->floorheight,
+                  frontsector->floorpic == skyflatnum &&  // kilough 10/98
+                  frontsector->sky & PL_SKYFLAT ? frontsector->sky :
+                  frontsector->floorpic,
+                  floorlightlevel//,                // killough 3/16/98
+                //   frontsector->floor_xoffs,       // killough 3/7/98
+                //   frontsector->floor_yoffs
+                  ) : NULL;
+
+    ceilingplane = frontsector->ceilingheight > viewz ||
+      frontsector->ceilingpic == skyflatnum ||
+      (frontsector->heightsec != -1 &&
+       sectors[frontsector->heightsec].floorpic == skyflatnum) ?
+      R_FindPlane(frontsector->ceilingheight,     // killough 3/8/98
+                  frontsector->ceilingpic == skyflatnum &&  // kilough 10/98
+                  frontsector->sky & PL_SKYFLAT ? frontsector->sky :
+                  frontsector->ceilingpic,
+                  ceilinglightlevel//,              // killough 4/11/98
+                //   frontsector->ceiling_xoffs,     // killough 3/7/98
+                //   frontsector->ceiling_yoffs
+                  ) : NULL;
+
+    // if (frontsector->interpfloorheight < viewz)
+    // {
+	// floorplane = R_FindPlane(frontsector->interpfloorheight,
+	// 			  // [crispy] add support for MBF sky tranfers
+	// 			  frontsector->floorpic == skyflatnum &&
+	// 			  frontsector->sky & PL_SKYFLAT ? frontsector->sky :
+	// 			  frontsector->floorpic,
+	// 			  frontsector->lightlevel);
+    // }
+    // else
+	// floorplane = NULL;
     
-    if (frontsector->interpceilingheight > viewz
-	|| frontsector->ceilingpic == skyflatnum)
-    {
-	ceilingplane = R_FindPlane(frontsector->interpceilingheight,
-				  // [crispy] add support for MBF sky tranfers
-				    frontsector->ceilingpic == skyflatnum &&
-				    frontsector->sky & PL_SKYFLAT ? frontsector->sky :
-				    frontsector->ceilingpic,
-				    frontsector->lightlevel);
-    }
-    else
-	ceilingplane = NULL;
+    // if (frontsector->interpceilingheight > viewz
+	// || frontsector->ceilingpic == skyflatnum)
+    // {
+	// ceilingplane = R_FindPlane(frontsector->interpceilingheight,
+	// 			  // [crispy] add support for MBF sky tranfers
+	// 			    frontsector->ceilingpic == skyflatnum &&
+	// 			    frontsector->sky & PL_SKYFLAT ? frontsector->sky :
+	// 			    frontsector->ceilingpic,
+	// 			    frontsector->lightlevel);
+    // }
+    // else
+	// ceilingplane = NULL;
 		
     R_AddSprites (frontsector);	
 

@@ -197,6 +197,7 @@ R_RenderMaskedSegRange
     column_t*	col;
     int		lightnum;
     int		texnum;
+	sector_t tempsec;      // killough 4/13/98
     
     // Calculate light table.
     // Use different light tables
@@ -207,7 +208,7 @@ R_RenderMaskedSegRange
     backsector = curline->backsector;
     texnum = texturetranslation[curline->sidedef->midtexture];
 	
-    lightnum = (frontsector->lightlevel >> LIGHTSEGSHIFT)+(extralight * LIGHTBRIGHT);
+    lightnum = (R_FakeFlat(frontsector, &tempsec, NULL, NULL, false)->lightlevel >> LIGHTSEGSHIFT)+(extralight * LIGHTBRIGHT);
 
     // [crispy] smoother fake contrast
     lightnum += curline->fakecontrast;
@@ -703,7 +704,13 @@ R_StoreWallRange
 			
 	if (worldlow != worldbottom 
 	    || backsector->floorpic != frontsector->floorpic
-	    || backsector->lightlevel != frontsector->lightlevel)
+	    || backsector->lightlevel != frontsector->lightlevel
+		// killough 4/15/98: prevent 2s normals
+        // from bleeding through deep water
+        || frontsector->heightsec != -1
+
+        // killough 4/17/98: draw floors if different light levels
+        || backsector->floorlightsec != frontsector->floorlightsec)
 	{
 	    markfloor = true;
 	}
@@ -716,7 +723,14 @@ R_StoreWallRange
 			
 	if (worldhigh != worldtop 
 	    || backsector->ceilingpic != frontsector->ceilingpic
-	    || backsector->lightlevel != frontsector->lightlevel)
+	    || backsector->lightlevel != frontsector->lightlevel
+		// killough 4/15/98: prevent 2s normals
+        // from bleeding through fake ceilings
+        || (frontsector->heightsec != -1 &&
+            frontsector->ceilingpic!=skyflatnum)
+
+        // killough 4/17/98: draw ceilings if different light levels
+        || backsector->ceilinglightsec != frontsector->ceilinglightsec)
 	{
 	    markceiling = true;
 	}
@@ -815,7 +829,9 @@ R_StoreWallRange
     //  of the view plane, it is definitely invisible
     //  and doesn't need to be marked.
     
-  
+  // killough 3/7/98: add deep water check
+  if (frontsector->heightsec == -1)
+  {
     if (frontsector->interpfloorheight >= viewz)
     {
 	// above view plane
@@ -828,7 +844,7 @@ R_StoreWallRange
 	// below view plane
 	markceiling = false;
     }
-
+  }
     
     // calculate incremental stepping values for texture edges
     worldtop >>= invhgtbits;

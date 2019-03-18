@@ -155,7 +155,7 @@ EV_DoPlat
     {
 	sec = &sectors[secnum];
 
-	if (sec->specialdata)
+	if (sec->floordata)
 	    continue;
 	
 	// Find lowest & highest floors around sector
@@ -165,7 +165,7 @@ EV_DoPlat
 		
 	plat->type = type;
 	plat->sector = sec;
-	plat->sector->specialdata = plat;
+	plat->sector->floordata = plat;
 	plat->thinker.function.acp1 = (actionf_p1) T_PlatRaise;
 	plat->crush = false;
 	plat->tag = line->tag;
@@ -294,7 +294,7 @@ void P_RemoveActivePlat(plat_t* plat)
     for (i = 0;i < MAXPLATS;i++)
 	if (plat == activeplats[i])
 	{
-	    (activeplats[i])->sector->specialdata = NULL;
+	    (activeplats[i])->sector->floordata = NULL;
 	    P_RemoveThinker(&(activeplats[i])->thinker);
 	    activeplats[i] = NULL;
 	    

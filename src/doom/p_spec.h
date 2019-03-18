@@ -23,6 +23,12 @@
 #ifndef __P_SPEC__
 #define __P_SPEC__
 
+// Amount (dx,dy) vector linedef is shifted right to get scroll amount
+#define SCROLL_SHIFT 5
+
+// Factor to scale scrolling effect into mobj-carrying properties = 3/32.
+// (This is so scrolling floors and objects on them can move at same speed.)
+#define CARRYFACTOR ((fixed_t)(FRACUNIT*.09375))
 
 //
 // End-level timer (-TIMER option)
@@ -33,6 +39,518 @@ extern	int	levelTimeCount;
 
 //      Define values for map objects
 #define MO_TELEPORTMAN          14
+
+// p_floor
+
+#define ELEVATORSPEED (FRACUNIT*4)
+#define FLOORSPEED     FRACUNIT
+
+// p_ceilng
+
+#define CEILSPEED   FRACUNIT
+#define CEILWAIT    150
+
+// p_doors
+
+#define VDOORSPEED  (FRACUNIT*2)
+#define VDOORWAIT   150
+
+// p_plats
+
+#define PLATWAIT    3
+#define PLATSPEED   FRACUNIT
+
+// p_switch
+
+// 4 players, 4 buttons each at once, max.
+// killough 2/14/98: redefine in terms of MAXPLAYERS
+#define MAXBUTTONS    (MAXPLAYERS*4)
+
+// 1 second, in ticks.
+#define BUTTONTIME  TICRATE
+
+// p_lights
+
+#define GLOWSPEED       8
+#define STROBEBRIGHT    5
+#define FASTDARK        15
+#define SLOWDARK        35
+
+//jff 3/14/98 add bits and shifts for generalized sector types
+
+#define DAMAGE_MASK     0x60
+#define DAMAGE_SHIFT    5
+#define SECRET_MASK     0x80
+#define SECRET_SHIFT    7
+#define FRICTION_MASK   0x100
+#define FRICTION_SHIFT  8
+#define PUSH_MASK       0x200
+#define PUSH_SHIFT      9
+
+//jff 02/04/98 Define masks, shifts, for fields in
+// generalized linedef types
+
+#define GenEnd                0x8000
+#define GenFloorBase          0x6000
+#define GenCeilingBase        0x4000
+#define GenDoorBase           0x3c00
+#define GenLockedBase         0x3800
+#define GenLiftBase           0x3400
+#define GenStairsBase         0x3000
+#define GenCrusherBase        0x2F80
+
+#define TriggerType           0x0007
+#define TriggerTypeShift      0
+
+// define masks and shifts for the floor type fields
+
+#define FloorCrush            0x1000
+#define FloorChange           0x0c00
+#define FloorTarget           0x0380
+#define FloorDirection        0x0040
+#define FloorModel            0x0020
+#define FloorSpeed            0x0018
+
+#define FloorCrushShift           12
+#define FloorChangeShift          10
+#define FloorTargetShift           7
+#define FloorDirectionShift        6
+#define FloorModelShift            5
+#define FloorSpeedShift            3
+
+// define masks and shifts for the ceiling type fields
+
+#define CeilingCrush          0x1000
+#define CeilingChange         0x0c00
+#define CeilingTarget         0x0380
+#define CeilingDirection      0x0040
+#define CeilingModel          0x0020
+#define CeilingSpeed          0x0018
+
+#define CeilingCrushShift         12
+#define CeilingChangeShift        10
+#define CeilingTargetShift         7
+#define CeilingDirectionShift      6
+#define CeilingModelShift          5
+#define CeilingSpeedShift          3
+
+// define masks and shifts for the lift type fields
+
+#define LiftTarget            0x0300
+#define LiftDelay             0x00c0
+#define LiftMonster           0x0020
+#define LiftSpeed             0x0018
+
+#define LiftTargetShift            8
+#define LiftDelayShift             6
+#define LiftMonsterShift           5
+#define LiftSpeedShift             3
+
+// define masks and shifts for the stairs type fields
+
+#define StairIgnore           0x0200
+#define StairDirection        0x0100
+#define StairStep             0x00c0
+#define StairMonster          0x0020
+#define StairSpeed            0x0018
+
+#define StairIgnoreShift           9
+#define StairDirectionShift        8
+#define StairStepShift             6
+#define StairMonsterShift          5
+#define StairSpeedShift            3
+
+// define masks and shifts for the crusher type fields
+
+#define CrusherSilent         0x0040
+#define CrusherMonster        0x0020
+#define CrusherSpeed          0x0018
+
+#define CrusherSilentShift         6
+#define CrusherMonsterShift        5
+#define CrusherSpeedShift          3
+
+// define masks and shifts for the door type fields
+
+#define DoorDelay             0x0300
+#define DoorMonster           0x0080
+#define DoorKind              0x0060
+#define DoorSpeed             0x0018
+
+#define DoorDelayShift             8
+#define DoorMonsterShift           7
+#define DoorKindShift              5
+#define DoorSpeedShift             3
+
+// define masks and shifts for the locked door type fields
+
+#define LockedNKeys           0x0200
+#define LockedKey             0x01c0
+#define LockedKind            0x0020
+#define LockedSpeed           0x0018
+
+#define LockedNKeysShift           9
+#define LockedKeyShift             6
+#define LockedKindShift            5
+#define LockedSpeedShift           3
+
+//
+// Animating textures and planes
+// There is another anim_t used in wi_stuff, unrelated.
+//
+typedef struct
+{
+    boolean     istexture;
+    int         picnum;
+    int         basepic;
+    int         numpics;
+    int         speed;
+
+} anim_t;
+
+//e6y
+typedef struct
+{
+  int index;
+  anim_t *anim;
+} TAnimItemParam;
+extern TAnimItemParam *anim_flats;
+extern TAnimItemParam *anim_textures;
+
+// define names for the TriggerType field of the general linedefs
+
+typedef enum
+{
+  WalkOnce,
+  WalkMany,
+  SwitchOnce,
+  SwitchMany,
+  GunOnce,
+  GunMany,
+  PushOnce,
+  PushMany,
+} triggertype_e;
+
+// define names for the Speed field of the general linedefs
+
+typedef enum
+{
+  SpeedSlow,
+  SpeedNormal,
+  SpeedFast,
+  SpeedTurbo,
+} motionspeed_e;
+
+// define names for the Target field of the general floor
+
+typedef enum
+{
+  FtoHnF,
+  FtoLnF,
+  FtoNnF,
+  FtoLnC,
+  FtoC,
+  FbyST,
+  Fby24,
+  Fby32,
+} floortarget_e;
+
+// define names for the Changer Type field of the general floor
+
+typedef enum
+{
+  FNoChg,
+  FChgZero,
+  FChgTxt,
+  FChgTyp,
+} floorchange_e;
+
+// define names for the Change Model field of the general floor
+
+typedef enum
+{
+  FTriggerModel,
+  FNumericModel,
+} floormodel_t;
+
+// define names for the Target field of the general ceiling
+
+typedef enum
+{
+  CtoHnC,
+  CtoLnC,
+  CtoNnC,
+  CtoHnF,
+  CtoF,
+  CbyST,
+  Cby24,
+  Cby32,
+} ceilingtarget_e;
+
+// define names for the Changer Type field of the general ceiling
+
+typedef enum
+{
+  CNoChg,
+  CChgZero,
+  CChgTxt,
+  CChgTyp,
+} ceilingchange_e;
+
+// define names for the Change Model field of the general ceiling
+
+typedef enum
+{
+  CTriggerModel,
+  CNumericModel,
+} ceilingmodel_t;
+
+// define names for the Target field of the general lift
+
+typedef enum
+{
+  F2LnF,
+  F2NnF,
+  F2LnC,
+  LnF2HnF,
+} lifttarget_e;
+
+// define names for the door Kind field of the general ceiling
+
+typedef enum
+{
+  OdCDoor,
+  ODoor,
+  CdODoor,
+  CDoor,
+} doorkind_e;
+
+// define names for the locked door Kind field of the general ceiling
+
+typedef enum
+{
+  AnyKey,
+  RCard,
+  BCard,
+  YCard,
+  RSkull,
+  BSkull,
+  YSkull,
+  AllKeys,
+} keykind_e;
+
+//////////////////////////////////////////////////////////////////
+//
+// enums for classes of linedef triggers
+//
+//////////////////////////////////////////////////////////////////
+
+//jff 2/23/98 identify the special classes that can share sectors
+
+typedef enum
+{
+  floor_special,
+  ceiling_special,
+  lighting_special,
+} special_e;
+
+//jff 3/15/98 pure texture/type change for better generalized support
+typedef enum
+{
+  trigChangeOnly,
+  numChangeOnly,
+} change_e;
+
+// p_plats
+
+typedef enum
+{
+  up,
+  down,
+  waiting,
+  in_stasis
+} plat_e;
+
+typedef enum
+{
+  perpetualRaise,
+  downWaitUpStay,
+  raiseAndChange,
+  raiseToNearestAndChange,
+  blazeDWUS,
+  genLift,      //jff added to support generalized Plat types
+  genPerpetual,
+  toggleUpDn,   //jff 3/14/98 added to support instant toggle type
+
+} plattype_e;
+
+// p_genlin
+
+int EV_DoGenFloor
+( line_t* line );
+
+int EV_DoGenCeiling
+( line_t* line );
+
+int EV_DoGenLift
+( line_t* line );
+
+int EV_DoGenStairs
+( line_t* line );
+
+int EV_DoGenCrusher
+( line_t* line );
+
+int EV_DoGenDoor
+( line_t* line );
+
+int EV_DoGenLockedDoor
+( line_t* line );
+
+// p_doors
+
+typedef enum
+{
+  normal,
+  close30ThenOpen,
+  closeDoor,
+  openDoor,
+  raiseIn5Mins,
+  blazeRaise,
+  blazeOpen,
+  blazeClose,
+
+  //jff 02/05/98 add generalize door types
+  genRaise,
+  genBlazeRaise,
+  genOpen,
+  genBlazeOpen,
+  genClose,
+  genBlazeClose,
+  genCdO,
+  genBlazeCdO,
+} vldoor_e;
+
+// p_ceilng
+
+typedef enum
+{
+  lowerToFloor,
+  raiseToHighest,
+  lowerToLowest,
+  lowerToMaxFloor,
+  lowerAndCrush,
+  crushAndRaise,
+  fastCrushAndRaise,
+  silentCrushAndRaise,
+
+  //jff 02/04/98 add types for generalized ceiling mover
+  genCeiling,
+  genCeilingChg,
+  genCeilingChg0,
+  genCeilingChgT,
+
+  //jff 02/05/98 add types for generalized ceiling mover
+  genCrusher,
+  genSilentCrusher,
+
+} ceiling_e;
+
+// p_floor
+
+typedef enum
+{
+  // lower floor to highest surrounding floor
+  lowerFloor,
+
+  // lower floor to lowest surrounding floor
+  lowerFloorToLowest,
+
+  // lower floor to highest surrounding floor VERY FAST
+  turboLower,
+
+  // raise floor to lowest surrounding CEILING
+  raiseFloor,
+
+  // raise floor to next highest surrounding floor
+  raiseFloorToNearest,
+
+  //jff 02/03/98 lower floor to next lowest neighbor
+  lowerFloorToNearest,
+
+  //jff 02/03/98 lower floor 24 absolute
+  lowerFloor24,
+
+  //jff 02/03/98 lower floor 32 absolute
+  lowerFloor32Turbo,
+
+  // raise floor to shortest height texture around it
+  raiseToTexture,
+
+  // lower floor to lowest surrounding floor
+  //  and change floorpic
+  lowerAndChange,
+
+  raiseFloor24,
+
+  //jff 02/03/98 raise floor 32 absolute
+  raiseFloor32Turbo,
+
+  raiseFloor24AndChange,
+  raiseFloorCrush,
+
+  // raise to next highest floor, turbo-speed
+  raiseFloorTurbo,
+  donutRaise,
+  raiseFloor512,
+
+  //jff 02/04/98  add types for generalized floor mover
+  genFloor,
+  genFloorChg,
+  genFloorChg0,
+  genFloorChgT,
+
+  //new types for stair builders
+  buildStair,
+  genBuildStair,
+} floor_e;
+
+typedef enum
+{
+  build8, // slowly build by 8
+  turbo16 // quickly build by 16
+
+} stair_e;
+
+typedef enum
+{
+  elevateUp,
+  elevateDown,
+  elevateCurrent,
+} elevator_e;
+
+//////////////////////////////////////////////////////////////////
+//
+// general enums
+//
+//////////////////////////////////////////////////////////////////
+
+// texture type enum
+typedef enum
+{
+    top,
+    middle,
+    bottom
+
+} bwhere_e;
+
+// crush check returns
+typedef enum
+{
+  ok,
+  crushed,
+  pastdest
+} result_e;
 
 
 // at game start
@@ -98,11 +616,6 @@ P_FindNextHighestFloor
 
 fixed_t P_FindLowestCeilingSurrounding(sector_t* sec);
 fixed_t P_FindHighestCeilingSurrounding(sector_t* sec);
-
-int
-P_FindSectorFromLineTag
-( line_t*	line,
-  int		start );
 
 int
 P_FindMinSurroundingLight
@@ -210,23 +723,14 @@ void    P_SpawnGlowingLight(sector_t* sector);
 //
 // P_SWITCH
 //
-typedef struct
+// [crispy] add PACKEDATTR for reading SWITCHES lumps from memory
+typedef PACKED_STRUCT (
 {
     char	name1[9];
     char	name2[9];
     short	episode;
     
-} switchlist_t;
-
-
-typedef enum
-{
-    top,
-    middle,
-    bottom
-
-} bwhere_e;
-
+}) switchlist_t;
 
 typedef struct
 {
@@ -244,13 +748,8 @@ typedef struct
  // max # of wall switches in a level
 #define MAXSWITCHES		50
 
- // 4 players, 4 buttons each at once, max.
-#define MAXBUTTONS		16
-
- // 1 second, in ticks. 
-#define BUTTONTIME      35             
-
-extern button_t	buttonlist[MAXBUTTONS]; 
+extern button_t	*buttonlist;
+extern int maxbuttons;
 
 void
 P_ChangeSwitchTexture
@@ -263,28 +762,6 @@ void P_InitSwitchList(void);
 //
 // P_PLATS
 //
-typedef enum
-{
-    up,
-    down,
-    waiting,
-    in_stasis
-
-} plat_e;
-
-
-
-typedef enum
-{
-    perpetualRaise,
-    downWaitUpStay,
-    raiseAndChange,
-    raiseToNearestAndChange,
-    blazeDWUS
-
-} plattype_e;
-
-
 
 typedef struct
 {
@@ -307,7 +784,7 @@ typedef struct
 
 #define PLATWAIT		3
 #define PLATSPEED		FRACUNIT
-#define MAXPLATS		30
+#define MAXPLATS		30*256
 
 
 extern plat_t*	activeplats[MAXPLATS];
@@ -329,20 +806,6 @@ void    P_ActivateInStasis(int tag);
 //
 // P_DOORS
 //
-typedef enum
-{
-    vld_normal,
-    vld_close30ThenOpen,
-    vld_close,
-    vld_open,
-    vld_raiseIn5Mins,
-    vld_blazeRaise,
-    vld_blazeOpen,
-    vld_blazeClose
-
-} vldoor_e;
-
-
 
 typedef struct
 {
@@ -361,12 +824,12 @@ typedef struct
     // when it reaches 0, start going down
     int             topcountdown;
     
+    //jff 1/31/98 keep track of line door is triggered by
+    line_t *line;
+
+    /* killough 10/98: sector tag for gradual lighting effects */
+    int lighttag;
 } vldoor_t;
-
-
-
-#define VDOORSPEED		FRACUNIT*2
-#define VDOORWAIT		150
 
 void
 EV_VerticalDoor
@@ -392,21 +855,95 @@ P_SpawnDoorRaiseIn5Mins
 ( sector_t*	sec,
   int		secnum );
 
+
+
+#if 0 // UNUSED
 //
-// P_CEILNG
+//      Sliding doors...
 //
 typedef enum
 {
-    lowerToFloor,
-    raiseToHighest,
-    lowerAndCrush,
-    crushAndRaise,
-    fastCrushAndRaise,
-    silentCrushAndRaise
+    sd_opening,
+    sd_waiting,
+    sd_closing
 
-} ceiling_e;
+} sd_e;
 
 
+
+typedef enum
+{
+    sdt_openOnly,
+    sdt_closeOnly,
+    sdt_openAndClose
+
+} sdt_e;
+
+
+
+
+typedef struct
+{
+    thinker_t	thinker;
+    sdt_e	type;
+    line_t*	line;
+    int		frame;
+    int		whichDoorIndex;
+    int		timer;
+    sector_t*	frontsector;
+    sector_t*	backsector;
+    sd_e	 status;
+
+} slidedoor_t;
+
+
+
+typedef struct
+{
+    char	frontFrame1[9];
+    char	frontFrame2[9];
+    char	frontFrame3[9];
+    char	frontFrame4[9];
+    char	backFrame1[9];
+    char	backFrame2[9];
+    char	backFrame3[9];
+    char	backFrame4[9];
+    
+} slidename_t;
+
+
+
+typedef struct
+{
+    int             frontFrames[4];
+    int             backFrames[4];
+
+} slideframe_t;
+
+
+
+// how many frames of animation
+#define SNUMFRAMES		4
+
+#define SDOORWAIT		35*3
+#define SWAITTICS		4
+
+// how many diff. types of anims
+#define MAXSLIDEDOORS	5                            
+
+void P_InitSlidingDoorFrames(void);
+
+void
+EV_SlidingDoor
+( line_t*	line,
+  mobj_t*	thing );
+#endif
+
+
+
+//
+// P_CEILNG
+//
 
 typedef struct
 {
@@ -416,7 +953,13 @@ typedef struct
     fixed_t	bottomheight;
     fixed_t	topheight;
     fixed_t	speed;
+    fixed_t oldspeed;
     boolean	crush;
+
+    //jff 02/04/98 add these to support ceiling changers
+    int newspecial;
+    int oldspecial; //jff 3/14/98 add to fix bug in change transfers
+    short texture;
 
     // 1 = up, 0 = waiting, -1 = down
     int		direction;
@@ -424,7 +967,7 @@ typedef struct
     // ID
     int		tag;                   
     int		olddirection;
-    
+    struct ceilinglist *list;   // jff 2/22/98 copied from killough's plats
 } ceiling_t;
 
 
@@ -446,58 +989,12 @@ void    T_MoveCeiling (ceiling_t* ceiling);
 void    P_AddActiveCeiling(ceiling_t* c);
 void    P_RemoveActiveCeiling(ceiling_t* c);
 int	EV_CeilingCrushStop(line_t* line);
-void    P_ActivateInStasisCeiling(line_t* line);
+int    P_ActivateInStasisCeiling(line_t* line);
 
 
 //
 // P_FLOOR
 //
-typedef enum
-{
-    // lower floor to highest surrounding floor
-    lowerFloor,
-    
-    // lower floor to lowest surrounding floor
-    lowerFloorToLowest,
-    
-    // lower floor to highest surrounding floor VERY FAST
-    turboLower,
-    
-    // raise floor to lowest surrounding CEILING
-    raiseFloor,
-    
-    // raise floor to next highest surrounding floor
-    raiseFloorToNearest,
-
-    // raise floor to shortest height texture around it
-    raiseToTexture,
-    
-    // lower floor to lowest surrounding floor
-    //  and change floorpic
-    lowerAndChange,
-  
-    raiseFloor24,
-    raiseFloor24AndChange,
-    raiseFloorCrush,
-
-     // raise to next highest floor, turbo-speed
-    raiseFloorTurbo,       
-    donutRaise,
-    raiseFloor512
-    
-} floor_e;
-
-
-
-
-typedef enum
-{
-    build8,	// slowly build by 8
-    turbo16	// quickly build by 16
-    
-} stair_e;
-
-
 
 typedef struct
 {
@@ -507,23 +1004,25 @@ typedef struct
     sector_t*	sector;
     int		direction;
     int		newspecial;
+    int oldspecial;   //jff 3/14/98 add to fix bug in change transfers
     short	texture;
     fixed_t	floordestheight;
     fixed_t	speed;
 
 } floormove_t;
 
-
+typedef struct
+{
+  thinker_t thinker;
+  elevator_e type;
+  sector_t* sector;
+  int direction;
+  fixed_t floordestheight;
+  fixed_t ceilingdestheight;
+  fixed_t speed;
+} elevator_t;
 
 #define FLOORSPEED		FRACUNIT
-
-typedef enum
-{
-    ok,
-    crushed,
-    pastdest
-    
-} result_e;
 
 result_e
 T_MovePlane
@@ -544,7 +1043,17 @@ EV_DoFloor
 ( line_t*	line,
   floor_e	floortype );
 
+int EV_DoChange
+( line_t* line,
+  change_e changetype );
+
+int
+EV_DoElevator
+( line_t* line,
+  elevator_e type );
+
 void T_MoveFloor( floormove_t* floor);
+void T_MoveElevator( elevator_t* elevator );
 
 //
 // P_TELEPT
@@ -554,5 +1063,58 @@ EV_Teleport
 ( line_t*	line,
   int		side,
   mobj_t*	thing );
+
+// killough 2/14/98: Add silent teleporter
+int EV_SilentTeleport
+( line_t* line,
+  int side,
+  mobj_t* thing );
+
+// killough 1/31/98: Add silent line teleporter
+int EV_SilentLineTeleport
+( line_t* line,
+  int side,
+  mobj_t* thing,
+  boolean reverse);
+
+// from PrBoom
+boolean P_SectorActive(special_e t, const sector_t *sec);
+fixed_t P_FindNextLowestFloor
+( sector_t* sec,
+  int currentheight );
+
+fixed_t P_FindShortestTextureAround
+( int secnum ); // jff 2/04/98
+
+fixed_t P_FindShortestUpperAround
+( int secnum ); // jff 2/04/98
+
+sector_t* P_FindModelCeilingSector
+( fixed_t ceildestheight,
+  int secnum ); //jff 02/04/98
+
+sector_t* P_FindModelFloorSector
+( fixed_t floordestheight,
+  int secnum ); //jff 02/04/98
+
+fixed_t P_FindNextLowestCeiling
+( sector_t *sec,
+  int currentheight ); // jff 2/04/98
+
+fixed_t P_FindNextHighestCeiling
+( sector_t *sec,
+  int currentheight ); // jff 2/04/98
+
+boolean P_CanUnlockGenDoor
+( line_t* line,
+  player_t* player);
+
+int P_FindSectorFromLineTag
+( line_t *line,
+  int start ); // killough 4/17/98
+
+int P_FindLineFromLineTag
+( line_t *line,
+  int start );   // killough 4/17/98
 
 #endif

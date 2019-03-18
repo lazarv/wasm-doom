@@ -188,8 +188,6 @@ static boolean ClearCache(int size)
         block = block->next;
     }
 
-    //printf("out of memory; cleaning out the cache: %i\n", test_malloced);
-
     // Search backwards through the list freeing blocks until we have
     // freed the amount of memory required.
 

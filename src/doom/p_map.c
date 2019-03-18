@@ -39,6 +39,8 @@
 // Data.
 #include "sounds.h"
 
+#include "i_video.h"
+
 // Spechit overrun magic value.
 //
 // This is the value used by PrBoom-plus.  I think the value below is 
@@ -1166,7 +1168,7 @@ boolean	PTR_UseTraverse (intercept_t* in)
     P_UseSpecialLine (usething, in->d.line, side);
 
     // can't use for than one special line in a row
-    return false;
+    return in->d.line->flags&ML_PASSUSE ? true : false;
 }
 
 

@@ -35,6 +35,8 @@
 #include "st_lib.h"
 #include "r_local.h"
 
+#include "i_video.h"
+
 
 // in AM_map.c
 extern boolean		automapactive; 

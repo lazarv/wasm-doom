@@ -31,6 +31,10 @@
 #define ST_WIDTH	SCREENWIDTH
 #define ST_Y		(SCREENHEIGHT - ST_HEIGHT)
 
+// e6y: wide-res
+#define ST_SCALED_HEIGHT ST_HEIGHT
+#define ST_SCALED_WIDTH  ST_WIDTH
+#define ST_SCALED_Y      ST_Y
 
 //
 // STATUS BAR

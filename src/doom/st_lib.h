@@ -21,7 +21,8 @@
 
 
 // We are referring to patches.
-#include "r_defs.h"
+// #include "r_defs.h"
+#include "v_patch.h"
 
 //
 // Typedefs of widgets

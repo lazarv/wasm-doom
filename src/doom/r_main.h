@@ -69,11 +69,12 @@ extern int LIGHTZSHIFT;
 
 extern lighttable_t***	scalelight;
 extern lighttable_t**	scalelightfixed;
-extern lighttable_t***	zlight;
+extern lighttable_t****	zlight;
 
 extern int		extralight;
 extern lighttable_t*	fixedcolormap;
 
+extern int numcolormaps;    // killough 4/4/98: dynamic number of maps
 
 // Number of diminishing brightness levels.
 // There a 0-31, i.e. 32 LUT in the COLORMAP lump.

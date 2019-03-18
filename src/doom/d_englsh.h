@@ -125,6 +125,9 @@
 #define PD_BLUEK	"You need a blue key to open this door"
 #define PD_REDK	"You need a red key to open this door"
 #define PD_YELLOWK	"You need a yellow key to open this door"
+#define PD_ANY        "Any key will open this door"
+#define PD_ALL3 "You need all three keys to open this door"
+#define PD_ALL6 "You need all six keys to open this door"
 
 //
 //	G_game.C

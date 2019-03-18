@@ -37,12 +37,12 @@ typedef struct
     // settings for this cheat
 
     char sequence[MAX_CHEAT_LEN];
-    size_t sequence_len;
+    int sequence_len;
     int parameter_chars;
 
     // state used during the game
 
-    size_t chars_read;
+    int chars_read;
     int param_chars_read;
     char parameter_buf[MAX_CHEAT_PARAMS];
 } cheatseq_t;

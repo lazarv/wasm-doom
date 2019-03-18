@@ -657,9 +657,28 @@ void R_ProjectSprite (mobj_t* thing)
     // off the left side
     if (x2 < 0)
 	return;
+
+    int heightsec = thing->subsector->sector->heightsec;
+
+    if (heightsec != -1)   // only clip things which are in special sectors
+    {
+        fixed_t   gzt;               // killough 3/27/98
+        gzt = interpz + spritetopoffset[lump];
+    int phs = viewplayer->mo->subsector->sector->heightsec;
+    if (phs != -1 && viewz < sectors[phs].floorheight ?
+        interpz >= sectors[heightsec].floorheight :
+        gzt < sectors[heightsec].floorheight)
+        return;
+    if (phs != -1 && viewz > sectors[phs].ceilingheight ?
+        gzt < sectors[heightsec].ceilingheight &&
+        viewz >= sectors[heightsec].ceilingheight :
+        interpz >= sectors[heightsec].ceilingheight)
+        return;
+    }
     
     // store information in a vissprite
     vis = R_NewVisSprite ();
+    vis->heightsec = heightsec;
     vis->translation = NULL; // [crispy] no color translation
     vis->mobjflags = thing->flags;
     vis->scale = xscale<<detailshift;
@@ -701,7 +720,7 @@ void R_ProjectSprite (mobj_t* thing)
     else if (thing->frame & FF_FULLBRIGHT)
     {
 	// full bright
-	vis->colormap[0] = vis->colormap[1] = colormaps;
+	vis->colormap[0] = vis->colormap[1] = fullcolormap;
     }
     
     else
@@ -858,7 +877,7 @@ void R_DrawPSprite (pspdef_t* psp, psprnum_t psprnum) // [crispy] differentiate 
     else if (psp->state->frame & FF_FULLBRIGHT)
     {
 	// full bright
-	vis->colormap[0] = vis->colormap[1] = colormaps;
+	vis->colormap[0] = vis->colormap[1] = fullcolormap;
     }
     else
     {
@@ -1102,6 +1121,49 @@ void R_DrawSprite (vissprite_t* spr)
 		
     }
     
+    // killough 3/27/98:
+    // Clip the sprite against deep water and/or fake ceilings.
+    // killough 4/9/98: optimize by adding mh
+    // killough 4/11/98: improve sprite clipping for underwater/fake ceilings
+    // killough 11/98: fix disappearing sprites
+
+    if (spr->heightsec != -1)  // only things in specially marked sectors
+        {
+        fixed_t h,mh;
+        int phs = viewplayer->mo->subsector->sector->heightsec;
+        if ((mh = sectors[spr->heightsec].floorheight) > spr->gz &&
+            (h = centeryfrac - FixedMul(mh-=viewz, spr->scale)) >= 0 &&
+            (h >>= FRACBITS) < viewheight) {
+            if (mh <= 0 || (phs != -1 && viewz > sectors[phs].floorheight))
+            {                          // clip bottom
+                for (x=spr->x1 ; x<=spr->x2 ; x++)
+                if (clipbot[x] == -2 || h < clipbot[x])
+                    clipbot[x] = h;
+            }
+            else                        // clip top
+        if (phs != -1 && viewz <= sectors[phs].floorheight) // killough 11/98
+        for (x=spr->x1 ; x<=spr->x2 ; x++)
+            if (cliptop[x] == -2 || h > cliptop[x])
+        cliptop[x] = h;
+        }
+
+        if ((mh = sectors[spr->heightsec].ceilingheight) < spr->gzt &&
+            (h = centeryfrac - FixedMul(mh-viewz, spr->scale)) >= 0 &&
+            (h >>= FRACBITS) < viewheight) {
+            if (phs != -1 && viewz >= sectors[phs].ceilingheight)
+            {                         // clip bottom
+                for (x=spr->x1 ; x<=spr->x2 ; x++)
+                if (clipbot[x] == -2 || h < clipbot[x])
+                    clipbot[x] = h;
+            }
+            else                       // clip top
+            for (x=spr->x1 ; x<=spr->x2 ; x++)
+                if (cliptop[x] == -2 || h > cliptop[x])
+                cliptop[x] = h;
+        }
+        }
+    // killough 3/27/98: end special clipping for deep water / fake ceilings
+
     // all clipping has been performed, so draw the sprite
 
     // check for unclipped columns

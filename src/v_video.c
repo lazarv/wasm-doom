@@ -19,9 +19,8 @@
 //	Functions to blit a block to the screen.
 //
 
-#include <emscripten.h>
-
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -41,16 +40,13 @@
 
 #include "config.h"
 #ifdef HAVE_LIBPNG
+#include <emscripten.h>
 #include <png.h>
 #endif
 
 // TODO: There are separate RANGECHECK defines for different games, but this
 // is common code. Fix this.
 #define RANGECHECK
-
-// Blending table used for fuzzpatch, etc.
-// Only used in Heretic/Hexen
-
 
 // Blending table used for fuzzpatch, etc.
 // Only used in Heretic/Hexen
@@ -105,13 +101,19 @@ void V_CopyRect(int srcx, int srcy, pixel_t *source,
      || srcy < 0
      || srcy + height > SCREENHEIGHT 
      || destx < 0
-     || destx + width > SCREENWIDTH
+     || destx /* + width */ > SCREENWIDTH
      || desty < 0
-     || desty + height > SCREENHEIGHT)
+     || desty /* + height */ > SCREENHEIGHT)
     {
         I_Error ("Bad V_CopyRect");
     }
 #endif 
+
+    // [crispy] prevent framebuffer overflow
+    if (destx + width > SCREENWIDTH)
+	width = SCREENWIDTH - destx;
+    if (desty + height > SCREENHEIGHT)
+	height = SCREENHEIGHT - desty;
 
     V_MarkRect(destx, desty, width, height); 
  
@@ -146,7 +148,22 @@ void V_SetPatchClipCallback(vpatchclipfunc_t func)
 // Masks a column based masked pic to the screen. 
 //
 
-void V_DrawPatch(int x, int y, patch_t *patch)
+// [crispy] four different rendering functions
+// for each possible combination of dp_translation and dp_translucent:
+// (1) normal, opaque patch
+static const inline byte drawpatchpx00 (const byte dest, const byte source)
+{return source;}
+// (2) color-translated, opaque patch
+static const inline byte drawpatchpx01 (const byte dest, const byte source)
+{return dp_translation[source];}
+// (3) normal, translucent patch
+static const inline byte drawpatchpx10 (const byte dest, const byte source)
+{return tranmap[(dest<<8)+source];}
+// (4) color-translated, translucent patch
+static const inline byte drawpatchpx11 (const byte dest, const byte source)
+{return tranmap[(dest<<8)+dp_translation[source]];}
+
+static void V_DrawPatchCrispy(int x, int y, patch_t *patch, int r)
 { 
     int count;
     int col;
@@ -154,7 +171,14 @@ void V_DrawPatch(int x, int y, patch_t *patch)
     pixel_t *desttop;
     pixel_t *dest;
     byte *source;
+    byte *desttop2, *dest2;
     int w;
+
+    // [crispy] four different rendering functions
+    const byte (* drawpatchpx) (const byte dest, const byte source) =
+        (!dp_translucent ?
+        (!dp_translation ? drawpatchpx00 : drawpatchpx01) :
+        (!dp_translation ? drawpatchpx10 : drawpatchpx11));
 
     y -= SHORT(patch->topoffset);
     x -= SHORT(patch->leftoffset);
@@ -166,42 +190,107 @@ void V_DrawPatch(int x, int y, patch_t *patch)
             return;
     }
 
-#ifdef RANGECHECK
-    if (x < 0
-     || x + SHORT(patch->width) > SCREENWIDTH
-     || y < 0
-     || y + SHORT(patch->height) > SCREENHEIGHT)
-    {
-        I_Error("Bad V_DrawPatch");
-    }
-#endif
+// #ifdef RANGECHECK_NOTHANKS
+//     if (x < 0
+//      || x + SHORT(patch->width) > SCREENWIDTH
+//      || y < 0
+//      || y + SHORT(patch->height) > SCREENHEIGHT)
+//     {
+//         I_Error("Bad V_DrawPatch");
+//     }
+// #endif
 
     V_MarkRect(x, y, SHORT(patch->width), SHORT(patch->height));
 
     col = 0;
     desttop = dest_screen + y * SCREENWIDTH + x;
+    desttop2 = dest_screen + (y + r) * SCREENWIDTH + (x + r);
 
     w = SHORT(patch->width);
 
-    for ( ; col<w ; x++, col++, desttop++)
+    for ( ; col<w ; x++, col++, desttop++, desttop2++)
     {
+        int topdelta = -1;
+
+        // [crispy] too far left
+        if (x < 0)
+        {
+            continue;
+        }
+
+        // [crispy] too far right / width
+        if (x >= SCREENWIDTH)
+        {
+            break;
+        }
+
         column = (column_t *)((byte *)patch + LONG(patch->columnofs[col]));
 
         // step through the posts in a column
         while (column->topdelta != 0xff)
         {
+            int top, srccol = 0;
+            // [crispy] support for DeePsea tall patches
+            if (column->topdelta <= topdelta)
+            {
+                topdelta += column->topdelta;
+            }
+            else
+            {
+                topdelta = column->topdelta;
+            }
+            top = y + topdelta;
             source = (byte *)column + 3;
-            dest = desttop + column->topdelta*SCREENWIDTH;
+            dest = desttop + topdelta * SCREENWIDTH;
+            dest2 = desttop2 + topdelta * SCREENWIDTH;
             count = column->length;
+
+            // [crispy] too low / height
+            if (top + count > SCREENHEIGHT)
+            {
+                count = SCREENHEIGHT - top;
+            }
+
+            // [crispy] nothing left to draw?
+            if (count < 1)
+            {
+                break;
+            }
 
             while (count--)
             {
-                *dest = *source++;
+                if (r)
+                {
+                    *dest2 = tinttable[*dest2];
+                    dest2 += SCREENWIDTH;
+                }
+
+                // [crispy] too high
+                if (top++ >= 0)
+                {
+                    *dest = drawpatchpx(*dest, source[srccol]);
+                }
+                srccol++;
                 dest += SCREENWIDTH;
             }
             column = (column_t *)((byte *)column + column->length + 4);
         }
     }
+}
+
+void V_DrawPatch(int x, int y, patch_t *patch)
+{
+    return V_DrawPatchCrispy(x, y, patch, 0);
+}
+
+void V_DrawPatchShadow1(int x, int y, patch_t *patch)
+{
+    return V_DrawPatchCrispy(x, y, patch, 1);
+}
+
+void V_DrawPatchShadow2(int x, int y, patch_t *patch)
+{
+    return V_DrawPatchCrispy(x, y, patch, 2);
 }
 
 //
@@ -230,7 +319,7 @@ void V_DrawPatchFlipped(int x, int y, patch_t *patch)
             return;
     }
 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK_NOTHANKS
     if (x < 0
      || x + SHORT(patch->width) > SCREENWIDTH
      || y < 0
@@ -249,18 +338,60 @@ void V_DrawPatchFlipped(int x, int y, patch_t *patch)
 
     for ( ; col<w ; x++, col++, desttop++)
     {
+        int topdelta = -1;
+
+        // [crispy] too far left
+        if (x < 0)
+        {
+            continue;
+        }
+
+        // [crispy] too far right / width
+        if (x >= SCREENWIDTH)
+        {
+            break;
+        }
+
         column = (column_t *)((byte *)patch + LONG(patch->columnofs[w-1-col]));
 
         // step through the posts in a column
         while (column->topdelta != 0xff )
         {
+            int top, srccol = 0;
+            // [crispy] support for DeePsea tall patches
+            if (column->topdelta <= topdelta)
+            {
+                topdelta += column->topdelta;
+            }
+            else
+            {
+                topdelta = column->topdelta;
+            }
+            top = y + topdelta;
             source = (byte *)column + 3;
-            dest = desttop + column->topdelta*SCREENWIDTH;
+            dest = desttop + topdelta * SCREENWIDTH;
             count = column->length;
+
+            // [crispy] too low / height
+            if (top + count > SCREENHEIGHT)
+            {
+                count = SCREENHEIGHT - top;
+            }
+
+            // [crispy] nothing left to draw?
+            if (count < 1)
+            {
+                break;
+            }
 
             while (count--)
             {
-                *dest = *source++;
+                // [crispy] too high
+                if (top++ >= 0)
+                {
+                    *dest = source[srccol];
+                }
+                srccol++;
                 dest += SCREENWIDTH;
             }
             column = (column_t *)((byte *)column + column->length + 4);
@@ -298,7 +429,7 @@ void V_DrawTLPatch(int x, int y, patch_t * patch)
     x -= SHORT(patch->leftoffset);
 
     if (x < 0
-     || x + SHORT(patch->width) > SCREENWIDTH 
+     || x + SHORT(patch->width) > SCREENWIDTH
      || y < 0
      || y + SHORT(patch->height) > SCREENHEIGHT)
     {
@@ -317,13 +448,15 @@ void V_DrawTLPatch(int x, int y, patch_t * patch)
 
         while (column->topdelta != 0xff)
         {
+            int srccol = 0;
             source = (byte *) column + 3;
             dest = desttop + column->topdelta * SCREENWIDTH;
             count = column->length;
 
             while (count--)
             {
-                *dest = tinttable[((*dest) << 8) + *source++];
+                *dest = tinttable[((*dest) << 8) + source[srccol]];
+                srccol++;
                 dest += SCREENWIDTH;
             }
             column = (column_t *) ((byte *) column + column->length + 4);
@@ -366,14 +499,15 @@ void V_DrawXlaPatch(int x, int y, patch_t * patch)
 
         while(column->topdelta != 0xff)
         {
+            int srccol = 0;
             source = (byte *) column + 3;
             dest = desttop + column->topdelta * SCREENWIDTH;
             count = column->length;
 
             while(count--)
             {
-                *dest = xlatab[*dest + ((*source) << 8)];
-                source++;
+                *dest = xlatab[*dest + (source[srccol] << 8)];
+                srccol++;
                 dest += SCREENWIDTH;
             }
             column = (column_t *) ((byte *) column + column->length + 4);
@@ -418,13 +552,15 @@ void V_DrawAltTLPatch(int x, int y, patch_t * patch)
 
         while (column->topdelta != 0xff)
         {
+            int srccol = 0;
             source = (byte *) column + 3;
             dest = desttop + column->topdelta * SCREENWIDTH;
             count = column->length;
 
             while (count--)
             {
-                *dest = tinttable[((*dest) << 8) + *source++];
+                *dest = tinttable[((*dest) << 8) + source[srccol]];
+                srccol++;
                 dest += SCREENWIDTH;
             }
             column = (column_t *) ((byte *) column + column->length + 4);
@@ -460,7 +596,7 @@ void V_DrawShadowedPatch(int x, int y, patch_t *patch)
 
     col = 0;
     desttop = dest_screen + y * SCREENWIDTH + x;
-    desttop2 = dest_screen + (y + 2) * SCREENWIDTH + x + 2;
+    desttop2 = dest_screen + (y + 2) * SCREENWIDTH + (x + 2);
 
     w = SHORT(patch->width);
     for (; col < w; x++, col++, desttop++, desttop2++)
@@ -471,6 +607,7 @@ void V_DrawShadowedPatch(int x, int y, patch_t *patch)
 
         while (column->topdelta != 0xff)
         {
+            int srccol = 0;
             source = (byte *) column + 3;
             dest = desttop + column->topdelta * SCREENWIDTH;
             dest2 = desttop2 + column->topdelta * SCREENWIDTH;
@@ -480,7 +617,8 @@ void V_DrawShadowedPatch(int x, int y, patch_t *patch)
             {
                 *dest2 = tinttable[((*dest2) << 8)];
                 dest2 += SCREENWIDTH;
-                *dest = *source++;
+                *dest = source[srccol];
+                srccol++;
                 dest += SCREENWIDTH;
 
             }
@@ -530,7 +668,7 @@ void V_DrawBlock(int x, int y, int width, int height, pixel_t *src)
  
     V_MarkRect (x, y, width, height); 
  
-    dest = dest_screen + y * SCREENWIDTH + x; 
+    dest = dest_screen + y * SCREENWIDTH + x;
 
     while (height--) 
     { 
@@ -539,6 +677,34 @@ void V_DrawBlock(int x, int y, int width, int height, pixel_t *src)
 	dest += SCREENWIDTH; 
     } 
 } 
+
+void V_DrawScaledBlock(int x, int y, int width, int height, byte *src)
+{
+    byte *dest;
+    int i, j;
+
+#ifdef RANGECHECK
+    if (x < 0
+     || x + width > SCREENWIDTH
+     || y < 0
+     || y + height > SCREENHEIGHT)
+    {
+	I_Error ("Bad V_DrawScaledBlock");
+    }
+#endif
+
+    V_MarkRect (x, y, width, height);
+
+    dest = dest_screen + y * SCREENWIDTH + x;
+
+    for (i = 0; i < height; i++)
+    {
+        for (j = 0; j < width; j++)
+        {
+            *(dest + i * SCREENWIDTH + j) = *(src + i * width + j);
+        }
+    }
+}
 
 void V_DrawFilledBox(int x, int y, int w, int h, int c)
 {
@@ -564,6 +730,10 @@ void V_DrawHorizLine(int x, int y, int w, int c)
 {
     pixel_t *buf;
     int x1;
+
+    // [crispy] prevent framebuffer overflows
+    if (x + w > SCREENWIDTH)
+	w = SCREENWIDTH - x;
 
     buf = I_VideoBuffer + SCREENWIDTH * y + x;
 
@@ -599,6 +769,10 @@ void V_DrawBox(int x, int y, int w, int h, int c)
 // Draw a "raw" screen (lump containing raw data to blit directly
 // to the screen)
 //
+
+// void V_CopyScaledBuffer(byte *dest, byte *src, size_t size)
+// {
+// }
  
 void V_DrawRawScreen(pixel_t *raw)
 {
@@ -609,7 +783,7 @@ void V_DrawRawScreen(pixel_t *raw)
 // V_Init
 // 
 void V_Init (void) 
-{ 
+{
     // no-op!
     // There used to be separate screens that could be drawn to; these are
     // now handled in the upper layers.
@@ -867,7 +1041,7 @@ void V_ScreenShot(const char *format)
         ext = "pcx";
     }
 
-    for (i=0; i<=99; i++)
+    for (i=0; i<=9999; i++) // [crispy] increase screenshot filename limit
     {
         M_snprintf(lbmname, sizeof(lbmname), format, i, ext);
 
@@ -877,7 +1051,7 @@ void V_ScreenShot(const char *format)
         }
     }
 
-    if (i == 100)
+    if (i == 10000) // [crispy] increase screenshot filename limit
     {
 #ifdef HAVE_LIBPNG
         if (png_screenshots)

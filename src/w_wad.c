@@ -181,12 +181,12 @@ wad_file_t *W_AddFile (char *filename)
 
          // Vanilla Doom doesn't like WADs with more than 4046 lumps
          // https://www.doomworld.com/vb/post/1010985
-         if (!strncmp(header.identification,"PWAD",4) && header.numlumps > 4046)
-         {
-                 W_CloseFile(wad_file);
-                 I_Error ("Error: Vanilla limit for lumps in a WAD is 4046, "
-                          "PWAD %s has %d", filename, header.numlumps);
-         }
+        //  if (!strncmp(header.identification,"PWAD",4) && header.numlumps > 4046)
+        //  {
+        //          W_CloseFile(wad_file);
+        //          I_Error ("Error: Vanilla limit for lumps in a WAD is 4046, "
+        //                   "PWAD %s has %d", filename, header.numlumps);
+        //  }
 
 	header.infotableofs = LONG(header.infotableofs);
 	length = header.numlumps*sizeof(filelump_t);
@@ -574,4 +574,12 @@ const char *W_WadNameForLump(const lumpinfo_t *lump)
 boolean W_IsIWADLump(const lumpinfo_t *lump)
 {
 	return lump->wad_file == lumpinfo[0]->wad_file;
+}
+
+const lumpinfo_t* W_GetLumpInfoByNum(int lump)
+{
+  if (lump < 0 || lump >= numlumps)
+    I_Error("W_GetLumpInfoByNum: lump num %d out of range", lump);
+
+  return lumpinfo[lump];
 }

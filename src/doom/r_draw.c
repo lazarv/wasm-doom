@@ -154,7 +154,7 @@ void R_DrawColumn (void)
     {
 	// [crispy] brightmaps
 	const byte source = dc_source[frac>>FRACBITS];
-	*dest = dc_colormap[dc_brightmap[source]][source];
+	*dest = fullcolormap[dc_colormap[dc_brightmap[source]][source]];
 
 	dest += SCREENWIDTH;
 	if ((frac += fracstep) >= heightmask)
@@ -169,7 +169,7 @@ void R_DrawColumn (void)
 	//  using a lighting/special effects LUT.
 	// [crispy] brightmaps
 	const byte source = dc_source[(frac>>FRACBITS)&heightmask];
-	*dest = dc_colormap[dc_brightmap[source]][source];
+	*dest = fullcolormap[dc_colormap[dc_brightmap[source]][source]];
 	
 	dest += SCREENWIDTH; 
 	frac += fracstep;
@@ -344,7 +344,7 @@ void R_DrawFuzzColumn (void)
 	//  a pixel that is either one column
 	//  left or right of the current one.
 	// Add index from colormap to index.
-	*dest = colormaps[6*256+dest[SCREENWIDTH*fuzzoffset[fuzzpos]]]; 
+	*dest = fullcolormap[6*256+dest[SCREENWIDTH*fuzzoffset[fuzzpos]]]; 
 
 	// Clamp table lookup index.
 	if (++fuzzpos == FUZZTABLE) 
@@ -359,7 +359,7 @@ void R_DrawFuzzColumn (void)
     // draw one extra line using only pixels of that line and the one above
     if (cutoff)
     {
-	*dest = colormaps[6*256+dest[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
+	*dest = fullcolormap[6*256+dest[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
     }
 } 
 
@@ -421,8 +421,8 @@ void R_DrawFuzzColumnLow (void)
 	//  a pixel that is either one column
 	//  left or right of the current one.
 	// Add index from colormap to index.
-	*dest = colormaps[6*256+dest[SCREENWIDTH*fuzzoffset[fuzzpos]]];
-	*dest2 = colormaps[6*256+dest2[SCREENWIDTH*fuzzoffset[fuzzpos]]];
+	*dest = fullcolormap[6*256+dest[SCREENWIDTH*fuzzoffset[fuzzpos]]];
+	*dest2 = fullcolormap[6*256+dest2[SCREENWIDTH*fuzzoffset[fuzzpos]]];
 
 	// Clamp table lookup index.
 	if (++fuzzpos == FUZZTABLE) 
@@ -438,8 +438,8 @@ void R_DrawFuzzColumnLow (void)
     // draw one extra line using only pixels of that line and the one above
     if (cutoff)
     {
-	*dest = colormaps[6*256+dest[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
-	*dest2 = colormaps[6*256+dest2[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
+	*dest = fullcolormap[6*256+dest[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
+	*dest2 = fullcolormap[6*256+dest2[SCREENWIDTH*(fuzzoffset[fuzzpos]-FUZZOFF)/2]];
     }
 } 
  
@@ -496,7 +496,7 @@ void R_DrawTranslatedColumn (void)
 	//  used with PLAY sprites.
 	// Thus the "green" ramp of the player 0 sprite
 	//  is mapped to gray, red, black/indigo. 
-	*dest = dc_colormap[0][dc_translation[dc_source[frac>>FRACBITS]]];
+	*dest = fullcolormap[dc_colormap[0][dc_translation[dc_source[frac>>FRACBITS]]]];
 	dest += SCREENWIDTH;
 	
 	frac += fracstep; 
@@ -742,7 +742,7 @@ void R_DrawSpan (void)
 	// Lookup pixel from flat texture tile,
 	//  re-index using light/colormap.
 	source = ds_source[spot];
-	*dest++ = ds_colormap[ds_brightmap[source]][source];
+	*dest++ = fullcolormap[ds_colormap[ds_brightmap[source]][source]];
 
         ds_xfrac += ds_xstep;
         ds_yfrac += ds_ystep;

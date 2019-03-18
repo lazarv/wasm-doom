@@ -28,6 +28,7 @@
 
 #include "deh_main.h"
 #include "i_system.h"
+#include "i_swap.h" // [crispy] LONG()
 #include "z_zone.h"
 #include "m_argv.h"
 #include "m_misc.h"
@@ -47,37 +48,29 @@
 // Data.
 #include "sounds.h"
 
+#include "d_englsh.h"
 
-//
-// Animating textures and planes
-// There is another anim_t used in wi_stuff, unrelated.
-//
-typedef struct
-{
-    boolean	istexture;
-    int		picnum;
-    int		basepic;
-    int		numpics;
-    int		speed;
-    
-} anim_t;
+#define HUSTR_SECRETFOUND	"A secret is revealed!"
 
 //
 //      source animation definition
 //
-typedef struct
+// [crispy] change istexture type from int to char and
+// add PACKEDATTR for reading ANIMATED lumps from memory
+typedef PACKED_STRUCT (
 {
-    int 	istexture;	// if false, it is a flat
+    signed char	istexture;	// if false, it is a flat
     char	endname[9];
     char	startname[9];
     int		speed;
-} animdef_t;
+}) animdef_t;
 
 
 
 #define MAXANIMS                32
 
-extern anim_t	anims[MAXANIMS];
+// [crispy] remove MAXANIMS limit
+extern anim_t*	anims;
 extern anim_t*	lastanim;
 
 //
@@ -93,7 +86,8 @@ extern anim_t*	lastanim;
 //  and end entry, in the order found in
 //  the WAD file.
 //
-animdef_t		animdefs[] =
+// [crispy] add support for ANIMATED lumps
+animdef_t		animdefs_vanilla[] =
 {
     {false,	"NUKAGE3",	"NUKAGE1",	8},
     {false,	"FWATER4",	"FWATER1",	8},
@@ -126,14 +120,16 @@ animdef_t		animdefs[] =
     {-1,        "",             "",             0},
 };
 
-anim_t		anims[MAXANIMS];
+// [crispy] remove MAXANIMS limit
+anim_t*		anims;
 anim_t*		lastanim;
+static size_t	maxanims;
 
 
 //
 //      Animating line specials
 //
-#define MAXLINEANIMS            64
+#define MAXLINEANIMS            64*256
 
 extern  short	numlinespecials;
 extern  line_t*	linespeciallist[MAXLINEANIMS];
@@ -144,12 +140,33 @@ void P_InitPicAnims (void)
 {
     int		i;
 
+    // [crispy] add support for ANIMATED lumps
+    animdef_t *animdefs;
+    const boolean from_lump = (W_CheckNumForName("ANIMATED") != -1);
+
+    if (from_lump)
+    {
+	animdefs = W_CacheLumpName("ANIMATED", PU_STATIC);
+    }
+    else
+    {
+	animdefs = animdefs_vanilla;
+    }
     
     //	Init animation
     lastanim = anims;
     for (i=0 ; animdefs[i].istexture != -1 ; i++)
     {
         const char *startname, *endname;
+
+	// [crispy] remove MAXANIMS limit
+	if (lastanim >= anims + maxanims)
+	{
+	    size_t newmax = maxanims ? 2 * maxanims : MAXANIMS;
+	    anims = I_Realloc(anims, newmax * sizeof(*anims));
+	    lastanim = anims + maxanims;
+	    maxanims = newmax;
+	}
 
         startname = DEH_String(animdefs[i].startname);
         endname = DEH_String(animdefs[i].endname);
@@ -179,10 +196,14 @@ void P_InitPicAnims (void)
 	    I_Error ("P_InitPicAnims: bad cycle from %s to %s",
 		     startname, endname);
 	
-	lastanim->speed = animdefs[i].speed;
+	lastanim->speed = from_lump ? LONG(animdefs[i].speed) : animdefs[i].speed;
 	lastanim++;
     }
 	
+    if (from_lump)
+    {
+	Z_ChangeTag(animdefs, PU_CACHE);
+    }
 }
 
 
@@ -331,74 +352,70 @@ P_FindNextHighestFloor
 ( sector_t* sec,
   int       currentheight )
 {
-	sector_t *other;
-	int i;
+    int         i;
+    int         h;
+    int         min;
+    line_t*     check;
+    sector_t*   other;
+    fixed_t     height = currentheight;
+    static fixed_t *heightlist = NULL;
+    static int heightlist_size = 0;
 
-	for (i=0 ;i < sec->linecount ; i++)
-		if ((other = getNextSector(sec->lines[i],sec)) &&
-			other->floorheight > currentheight)
-		{
-		int height = other->floorheight;
-		while (++i < sec->linecount)
-			if ((other = getNextSector(sec->lines[i],sec)) &&
-				other->floorheight < height &&
-				other->floorheight > currentheight)
-			height = other->floorheight;
-		return height;
-		}
-	return currentheight;
-    // int         i;
-    // int         h;
-    // int         min;
-    // line_t*     check;
-    // sector_t*   other;
-    // fixed_t     height = currentheight;
-    // fixed_t     heightlist[MAX_ADJOINING_SECTORS + 2];
+    // [crispy] remove MAX_ADJOINING_SECTORS Vanilla limit
+    // from prboom-plus/src/p_spec.c:404-411
+    if (sec->linecount > heightlist_size)
+    {
+	do
+	{
+	    heightlist_size = heightlist_size ? 2 * heightlist_size : MAX_ADJOINING_SECTORS;
+	} while (sec->linecount > heightlist_size);
+	heightlist = I_Realloc(heightlist, heightlist_size * sizeof(*heightlist));
+    }
 
-    // for (i=0, h=0; i < sec->linecount; i++)
-    // {
-    //     check = sec->lines[i];
-    //     other = getNextSector(check,sec);
+    for (i=0, h=0; i < sec->linecount; i++)
+    {
+        check = sec->lines[i];
+        other = getNextSector(check,sec);
 
-    //     if (!other)
-    //         continue;
+        if (!other)
+            continue;
         
-    //     if (other->floorheight > height)
-    //     {
-    //         // Emulation of memory (stack) overflow
-    //         if (h == MAX_ADJOINING_SECTORS + 1)
-    //         {
-    //             height = other->floorheight;
-    //         }
-    //         else if (h == MAX_ADJOINING_SECTORS + 2)
-    //         {
-    //             // Fatal overflow: game crashes at 22 sectors
-    //             I_Error("Sector with more than 22 adjoining sectors. "
-    //                     "Vanilla will crash here");
-    //         }
+        if (other->floorheight > height)
+        {
+            // Emulation of memory (stack) overflow
+            if (h == MAX_ADJOINING_SECTORS + 1)
+            {
+                height = other->floorheight;
+            }
+            else if (h == MAX_ADJOINING_SECTORS + 2)
+            {
+                // Fatal overflow: game crashes at 22 sectors
+                fprintf(stderr, "Sector with more than 22 adjoining sectors. "
+                        "Vanilla will crash here\n");
+            }
 
-    //         heightlist[h++] = other->floorheight;
-    //     }
-    // }
+            heightlist[h++] = other->floorheight;
+        }
+    }
     
-    // // Find lowest height in list
-    // if (!h)
-    // {
-    //     return currentheight;
-    // }
+    // Find lowest height in list
+    if (!h)
+    {
+        return currentheight;
+    }
         
-    // min = heightlist[0];
+    min = heightlist[0];
     
-    // // Range checking? 
-    // for (i = 1; i < h; i++)
-    // {
-    //     if (heightlist[i] < min)
-    //     {
-    //         min = heightlist[i];
-    //     }
-    // }
+    // Range checking? 
+    for (i = 1; i < h; i++)
+    {
+        if (heightlist[i] < min)
+        {
+            min = heightlist[i];
+        }
+    }
 
-    // return min;
+    return min;
 }
 
 //
@@ -463,6 +480,18 @@ P_FindSectorFromLineTag
 {
     int	i;
 	
+    // [crispy] linedefs without tags apply locally
+    if (!line->tag)
+    {
+    for (i=start+1;i<numsectors;i++)
+	if (&sectors[i] == line->backsector)
+	{
+	    // const long linedef = line - lines;
+	    // fprintf(stderr, "P_FindSectorFromLineTag: Linedef %ld without tag applied to sector %d\n", linedef, i);
+	    return i;
+	}
+    }
+    else
     for (i=start+1;i<numsectors;i++)
 	if (sectors[i].tag == line->tag)
 	    return i;
@@ -552,7 +581,103 @@ P_CrossSpecialLinePtr
 	    
 	  default: break;
 	}
+	}
+
+	// pointer to line function is NULL by default, set non-null if
+    // line special is walkover generalized linedef type
+    int (*linefunc)(line_t *line)=NULL;
+
+    // check each range of generalized linedefs
+    if ((unsigned)line->special >= GenEnd)
+    {
+      // Out of range for GenFloors
+    }
+    else if ((unsigned)line->special >= GenFloorBase)
+    {
+      if (!thing->player)
+        if ((line->special & FloorChange) || !(line->special & FloorModel))
+          return; // FloorModel is "Allow Monsters" if FloorChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenFloor;
+    }
+    else if ((unsigned)line->special >= GenCeilingBase)
+    {
+      if (!thing->player)
+        if ((line->special & CeilingChange) || !(line->special & CeilingModel))
+          return;   // CeilingModel is "Allow Monsters" if CeilingChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenCeiling;
+    }
+    else if ((unsigned)line->special >= GenDoorBase)
+    {
+      if (!thing->player)
+      {
+        if (!(line->special & DoorMonster))
+          return;   // monsters disallowed from this door
+        if (line->flags & ML_SECRET) // they can't open secret doors either
+          return;
+      }
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 3/2/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenDoor;
+    }
+    else if ((unsigned)line->special >= GenLockedBase)
+    {
+      if (!thing->player)
+        return;   // monsters disallowed from unlocking doors
+      if (!P_CanUnlockGenDoor(line,thing->player))
+        return;
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+
+      linefunc = EV_DoGenLockedDoor;
+    }
+    else if ((unsigned)line->special >= GenLiftBase)
+    {
+      if (!thing->player)
+        if (!(line->special & LiftMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenLift;
+    }
+    else if ((unsigned)line->special >= GenStairsBase)
+    {
+      if (!thing->player)
+        if (!(line->special & StairMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenStairs;
+    }
+    else if ((unsigned)line->special >= GenCrusherBase)
+    {
+      if (!thing->player)
+        if (!(line->special & CrusherMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenCrusher;
+    }
+
+    if (linefunc) // if it was a valid generalized type
+      switch((line->special & TriggerType) >> TriggerTypeShift)
+      {
+        case WalkOnce:
+          if (linefunc(line))
+            line->special = 0;    // clear special if a walk once type
+          return;
+        case WalkMany:
+          linefunc(line);
+          return;
+        default:                  // if not a walk type, do nothing here
+          return;
+      }
 		
+	if (!thing->player)
+    {
 	ok = 0;
 	switch(line->special)
 	{
@@ -563,8 +688,21 @@ P_CrossSpecialLinePtr
 	  case 4:	// RAISE DOOR
 	  case 10:	// PLAT DOWN-WAIT-UP-STAY TRIGGER
 	  case 88:	// PLAT DOWN-WAIT-UP-STAY RETRIGGER
+		//jff 3/5/98 add ability of monsters etc. to use teleporters
+      case 208:     //silent thing teleporters
+      case 207:
+      case 243:     //silent line-line teleporter
+      case 244:     //jff 3/6/98 make fit within DCK's 256 linedef types
+      case 262:     //jff 4/14/98 add monster only
+      case 263:     //jff 4/14/98 silent thing,line,line rev types
+      case 264:     //jff 4/14/98 plus player/monster silent line
+      case 265:     //            reversed types
+      case 266:
+      case 267:
+      case 268:
+      case 269:
 	    ok = 1;
-	    break;
+	  	break;
 	}
 	if (!ok)
 	    return;
@@ -578,19 +716,19 @@ P_CrossSpecialLinePtr
 	// All from here to RETRIGGERS.
       case 2:
 	// Open Door
-	EV_DoDoor(line,vld_open);
+	EV_DoDoor(line,openDoor);
 	line->special = 0;
 	break;
 
       case 3:
 	// Close Door
-	EV_DoDoor(line,vld_close);
+	EV_DoDoor(line,closeDoor);
 	line->special = 0;
 	break;
 
       case 4:
 	// Raise Door
-	EV_DoDoor(line,vld_normal);
+	EV_DoDoor(line,normal);
 	line->special = 0;
 	break;
 	
@@ -632,7 +770,7 @@ P_CrossSpecialLinePtr
 	
       case 16:
 	// Close Door 30
-	EV_DoDoor(line,vld_close30ThenOpen);
+	EV_DoDoor(line,close30ThenOpen);
 	line->special = 0;
 	break;
 	
@@ -750,6 +888,12 @@ P_CrossSpecialLinePtr
 	EV_DoFloor(line,raiseFloor24AndChange);
 	line->special = 0;
 	break;
+
+	  case 100:
+	// Build Stairs Turbo 16
+	EV_BuildStairs(line,turbo16);
+	line->special = 0;
+	break;
 	
       case 104:
 	// Turn lights off in sector(tag)
@@ -759,25 +903,19 @@ P_CrossSpecialLinePtr
 	
       case 108:
 	// Blazing Door Raise (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeRaise);
+	EV_DoDoor (line,blazeRaise);
 	line->special = 0;
 	break;
 	
       case 109:
 	// Blazing Door Open (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeOpen);
-	line->special = 0;
-	break;
-	
-      case 100:
-	// Build Stairs Turbo 16
-	EV_BuildStairs(line,turbo16);
+	EV_DoDoor (line,blazeOpen);
 	line->special = 0;
 	break;
 	
       case 110:
 	// Blazing Door Close (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeClose);
+	EV_DoDoor (line,blazeClose);
 	line->special = 0;
 	break;
 
@@ -837,12 +975,12 @@ P_CrossSpecialLinePtr
 	
       case 75:
 	// Close Door
-	EV_DoDoor(line,vld_close);
+	EV_DoDoor(line,closeDoor);
 	break;
 	
       case 76:
 	// Close Door 30
-	EV_DoDoor(line,vld_close30ThenOpen);
+	EV_DoDoor(line,close30ThenOpen);
 	break;
 	
       case 77:
@@ -882,7 +1020,7 @@ P_CrossSpecialLinePtr
 
       case 86:
 	// Open Door
-	EV_DoDoor(line,vld_open);
+	EV_DoDoor(line,openDoor);
 	break;
 	
       case 87:
@@ -902,7 +1040,7 @@ P_CrossSpecialLinePtr
 	
       case 90:
 	// Raise Door
-	EV_DoDoor(line,vld_normal);
+	EV_DoDoor(line,normal);
 	break;
 	
       case 91:
@@ -949,17 +1087,17 @@ P_CrossSpecialLinePtr
 
       case 105:
 	// Blazing Door Raise (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeRaise);
+	EV_DoDoor (line,blazeRaise);
 	break;
 	
       case 106:
 	// Blazing Door Open (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeOpen);
+	EV_DoDoor (line,blazeOpen);
 	break;
 
       case 107:
 	// Blazing Door Close (faster than TURBO!)
-	EV_DoDoor (line,vld_blazeClose);
+	EV_DoDoor (line,blazeClose);
 	break;
 
       case 120:
@@ -982,6 +1120,308 @@ P_CrossSpecialLinePtr
 	// Raise Floor Turbo
 	EV_DoFloor(line,raiseFloorTurbo);
 	break;
+
+		// Extended walk triggers
+
+      // jff 1/29/98 added new linedef types to fill all functions out so that
+      // all have varieties SR, S1, WR, W1
+
+      // killough 1/31/98: "factor out" compatibility test, by
+      // adding inner switch qualified by compatibility flag.
+      // relax test to demo_compatibility
+
+      // killough 2/16/98: Fix problems with W1 types being cleared too early
+
+	  // Extended walk once triggers
+
+          case 142:
+            // Raise Floor 512
+            // 142 W1  EV_DoFloor(raiseFloor512)
+            if (EV_DoFloor(line,raiseFloor512))
+              line->special = 0;
+            break;
+
+          case 143:
+            // Raise Floor 24 and change
+            // 143 W1  EV_DoPlat(raiseAndChange,24)
+            if (EV_DoPlat(line,raiseAndChange,24))
+              line->special = 0;
+            break;
+
+          case 144:
+            // Raise Floor 32 and change
+            // 144 W1  EV_DoPlat(raiseAndChange,32)
+            if (EV_DoPlat(line,raiseAndChange,32))
+              line->special = 0;
+            break;
+
+          case 145:
+            // Lower Ceiling to Floor
+            // 145 W1  EV_DoCeiling(lowerToFloor)
+            if (EV_DoCeiling( line, lowerToFloor ))
+              line->special = 0;
+            break;
+
+          case 146:
+            // Lower Pillar, Raise Donut
+            // 146 W1  EV_DoDonut()
+            if (EV_DoDonut(line))
+              line->special = 0;
+            break;
+
+          case 199:
+            // Lower ceiling to lowest surrounding ceiling
+            // 199 W1 EV_DoCeiling(lowerToLowest)
+            if (EV_DoCeiling(line,lowerToLowest))
+              line->special = 0;
+            break;
+
+          case 200:
+            // Lower ceiling to highest surrounding floor
+            // 200 W1 EV_DoCeiling(lowerToMaxFloor)
+            if (EV_DoCeiling(line,lowerToMaxFloor))
+              line->special = 0;
+            break;
+
+          case 207:
+            // killough 2/16/98: W1 silent teleporter (normal kind)
+            if (EV_SilentTeleport(line, side, thing))
+              line->special = 0;
+            break;
+
+            //jff 3/16/98 renumber 215->153
+          case 153: //jff 3/15/98 create texture change no motion type
+            // Texture/Type Change Only (Trig)
+            // 153 W1 Change Texture/Type Only
+            if (EV_DoChange(line,trigChangeOnly))
+              line->special = 0;
+            break;
+
+          case 239: //jff 3/15/98 create texture change no motion type
+            // Texture/Type Change Only (Numeric)
+            // 239 W1 Change Texture/Type Only
+            if (EV_DoChange(line,numChangeOnly))
+              line->special = 0;
+            break;
+
+          case 219:
+            // Lower floor to next lower neighbor
+            // 219 W1 Lower Floor Next Lower Neighbor
+            if (EV_DoFloor(line,lowerFloorToNearest))
+              line->special = 0;
+            break;
+
+          case 227:
+            // Raise elevator next floor
+            // 227 W1 Raise Elevator next floor
+            if (EV_DoElevator(line,elevateUp))
+              line->special = 0;
+            break;
+
+          case 231:
+            // Lower elevator next floor
+            // 231 W1 Lower Elevator next floor
+            if (EV_DoElevator(line,elevateDown))
+              line->special = 0;
+            break;
+
+          case 235:
+            // Elevator to current floor
+            // 235 W1 Elevator to current floor
+            if (EV_DoElevator(line,elevateCurrent))
+              line->special = 0;
+            break;
+
+          case 243: //jff 3/6/98 make fit within DCK's 256 linedef types
+            // killough 2/16/98: W1 silent teleporter (linedef-linedef kind)
+            if (EV_SilentLineTeleport(line, side, thing, false))
+              line->special = 0;
+            break;
+
+          case 262: //jff 4/14/98 add silent line-line reversed
+            if (EV_SilentLineTeleport(line, side, thing, true))
+              line->special = 0;
+            break;
+
+          case 264: //jff 4/14/98 add monster-only silent line-line reversed
+            if (!thing->player &&
+                EV_SilentLineTeleport(line, side, thing, true))
+              line->special = 0;
+            break;
+
+          case 266: //jff 4/14/98 add monster-only silent line-line
+            if (!thing->player &&
+                EV_SilentLineTeleport(line, side, thing, false))
+              line->special = 0;
+            break;
+
+          case 268: //jff 4/14/98 add monster-only silent
+            if (!thing->player && EV_SilentTeleport(line, side, thing))
+              line->special = 0;
+            break;
+
+          //jff 1/29/98 end of added W1 linedef types
+
+          // Extended walk many retriggerable
+
+          //jff 1/29/98 added new linedef types to fill all functions
+          //out so that all have varieties SR, S1, WR, W1
+
+          case 147:
+            // Raise Floor 512
+            // 147 WR  EV_DoFloor(raiseFloor512)
+            EV_DoFloor(line,raiseFloor512);
+            break;
+
+          case 148:
+            // Raise Floor 24 and Change
+            // 148 WR  EV_DoPlat(raiseAndChange,24)
+            EV_DoPlat(line,raiseAndChange,24);
+            break;
+
+          case 149:
+            // Raise Floor 32 and Change
+            // 149 WR  EV_DoPlat(raiseAndChange,32)
+            EV_DoPlat(line,raiseAndChange,32);
+            break;
+
+          case 150:
+            // Start slow silent crusher
+            // 150 WR  EV_DoCeiling(silentCrushAndRaise)
+            EV_DoCeiling(line,silentCrushAndRaise);
+            break;
+
+          case 151:
+            // RaiseCeilingLowerFloor
+            // 151 WR  EV_DoCeiling(raiseToHighest),
+            //         EV_DoFloor(lowerFloortoLowest)
+            EV_DoCeiling( line, raiseToHighest );
+            EV_DoFloor( line, lowerFloorToLowest );
+            break;
+
+          case 152:
+            // Lower Ceiling to Floor
+            // 152 WR  EV_DoCeiling(lowerToFloor)
+            EV_DoCeiling( line, lowerToFloor );
+            break;
+
+            //jff 3/16/98 renumber 153->256
+          case 256:
+            // Build stairs, step 8
+            // 256 WR EV_BuildStairs(build8)
+            EV_BuildStairs(line,build8);
+            break;
+
+            //jff 3/16/98 renumber 154->257
+          case 257:
+            // Build stairs, step 16
+            // 257 WR EV_BuildStairs(turbo16)
+            EV_BuildStairs(line,turbo16);
+            break;
+
+          case 155:
+            // Lower Pillar, Raise Donut
+            // 155 WR  EV_DoDonut()
+            EV_DoDonut(line);
+            break;
+
+          case 156:
+            // Start lights strobing
+            // 156 WR Lights EV_StartLightStrobing()
+            EV_StartLightStrobing(line);
+            break;
+
+          case 157:
+            // Lights to dimmest near
+            // 157 WR Lights EV_TurnTagLightsOff()
+            EV_TurnTagLightsOff(line);
+            break;
+
+          case 201:
+            // Lower ceiling to lowest surrounding ceiling
+            // 201 WR EV_DoCeiling(lowerToLowest)
+            EV_DoCeiling(line,lowerToLowest);
+            break;
+
+          case 202:
+            // Lower ceiling to highest surrounding floor
+            // 202 WR EV_DoCeiling(lowerToMaxFloor)
+            EV_DoCeiling(line,lowerToMaxFloor);
+            break;
+
+          case 208:
+            // killough 2/16/98: WR silent teleporter (normal kind)
+            EV_SilentTeleport(line, side, thing);
+            break;
+
+          case 212: //jff 3/14/98 create instant toggle floor type
+            // Toggle floor between C and F instantly
+            // 212 WR Instant Toggle Floor
+            EV_DoPlat(line,toggleUpDn,0);
+            break;
+
+          //jff 3/16/98 renumber 216->154
+          case 154: //jff 3/15/98 create texture change no motion type
+            // Texture/Type Change Only (Trigger)
+            // 154 WR Change Texture/Type Only
+            EV_DoChange(line,trigChangeOnly);
+            break;
+
+          case 240: //jff 3/15/98 create texture change no motion type
+            // Texture/Type Change Only (Numeric)
+            // 240 WR Change Texture/Type Only
+            EV_DoChange(line,numChangeOnly);
+            break;
+
+          case 220:
+            // Lower floor to next lower neighbor
+            // 220 WR Lower Floor Next Lower Neighbor
+            EV_DoFloor(line,lowerFloorToNearest);
+            break;
+
+          case 228:
+            // Raise elevator next floor
+            // 228 WR Raise Elevator next floor
+            EV_DoElevator(line,elevateUp);
+            break;
+
+          case 232:
+            // Lower elevator next floor
+            // 232 WR Lower Elevator next floor
+            EV_DoElevator(line,elevateDown);
+            break;
+
+          case 236:
+            // Elevator to current floor
+            // 236 WR Elevator to current floor
+            EV_DoElevator(line,elevateCurrent);
+            break;
+
+          case 244: //jff 3/6/98 make fit within DCK's 256 linedef types
+            // killough 2/16/98: WR silent teleporter (linedef-linedef kind)
+            EV_SilentLineTeleport(line, side, thing, false);
+            break;
+
+          case 263: //jff 4/14/98 add silent line-line reversed
+            EV_SilentLineTeleport(line, side, thing, true);
+            break;
+
+          case 265: //jff 4/14/98 add monster-only silent line-line reversed
+            if (!thing->player)
+              EV_SilentLineTeleport(line, side, thing, true);
+            break;
+
+          case 267: //jff 4/14/98 add monster-only silent line-line
+            if (!thing->player)
+              EV_SilentLineTeleport(line, side, thing, false);
+            break;
+
+          case 269: //jff 4/14/98 add monster-only silent
+            if (!thing->player)
+              EV_SilentTeleport(line, side, thing);
+            break;
+
+            //jff 1/29/98 end of added WR linedef types
     }
 }
 
@@ -996,6 +1436,101 @@ P_ShootSpecialLine
 ( mobj_t*	thing,
   line_t*	line )
 {
+
+	// pointer to line function is NULL by default, set non-null if
+    // line special is walkover generalized linedef type
+    int (*linefunc)(line_t *line)=NULL;
+
+    // check each range of generalized linedefs
+    if ((unsigned)line->special >= GenEnd)
+    {
+      // Out of range for GenFloors
+    }
+    else if ((unsigned)line->special >= GenFloorBase)
+    {
+      if (!thing->player)
+        if ((line->special & FloorChange) || !(line->special & FloorModel))
+          return; // FloorModel is "Allow Monsters" if FloorChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenFloor;
+    }
+    else if ((unsigned)line->special >= GenCeilingBase)
+    {
+      if (!thing->player)
+        if ((line->special & CeilingChange) || !(line->special & CeilingModel))
+          return;   // CeilingModel is "Allow Monsters" if CeilingChange is 0
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenCeiling;
+    }
+    else if ((unsigned)line->special >= GenDoorBase)
+    {
+      if (!thing->player)
+      {
+        if (!(line->special & DoorMonster))
+          return;   // monsters disallowed from this door
+        if (line->flags & ML_SECRET) // they can't open secret doors either
+          return;
+      }
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 3/2/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenDoor;
+    }
+    else if ((unsigned)line->special >= GenLockedBase)
+    {
+      if (!thing->player)
+        return;   // monsters disallowed from unlocking doors
+      if (!P_CanUnlockGenDoor(line,thing->player))
+        return;
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+
+      linefunc = EV_DoGenLockedDoor;
+    }
+    else if ((unsigned)line->special >= GenLiftBase)
+    {
+      if (!thing->player)
+        if (!(line->special & LiftMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenLift;
+    }
+    else if ((unsigned)line->special >= GenStairsBase)
+    {
+      if (!thing->player)
+        if (!(line->special & StairMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenStairs;
+    }
+    else if ((unsigned)line->special >= GenCrusherBase)
+    {
+      if (!thing->player)
+        if (!(line->special & CrusherMonster))
+          return; // monsters disallowed
+      if (/*!comperr(comperr_zerotag) &&*/ !line->tag && ((line->special&6)!=6)) //e6y //jff 2/27/98 all non-manual
+        return;                         // generalized types require tag
+      linefunc = EV_DoGenCrusher;
+    }
+
+    if (linefunc)
+      switch((line->special & TriggerType) >> TriggerTypeShift)
+      {
+        case GunOnce:
+          if (linefunc(line))
+            P_ChangeSwitchTexture(line,0);
+          return;
+        case GunMany:
+          if (linefunc(line))
+            P_ChangeSwitchTexture(line,1);
+          return;
+        default:  // if not a gun type, do nothing here
+          return;
+      }
+
     int		ok;
     
     //	Impacts that other things can activate.
@@ -1023,7 +1558,7 @@ P_ShootSpecialLine
 	
       case 46:
 	// OPEN DOOR
-	EV_DoDoor(line,vld_open);
+	EV_DoDoor(line,openDoor);
 	P_ChangeSwitchTexture(line,1);
 	break;
 	
@@ -1032,6 +1567,28 @@ P_ShootSpecialLine
 	EV_DoPlat(line,raiseToNearestAndChange,0);
 	P_ChangeSwitchTexture(line,0);
 	break;
+
+	//jff 1/30/98 added new gun linedefs here
+    // killough 1/31/98: added demo_compatibility check, added inner switch
+
+	case 197:
+	// Exit to next level
+	// killough 10/98: prevent zombies from exiting levels
+	if(thing->player && thing->player->health<=0)
+		break;
+	P_ChangeSwitchTexture(line,0);
+	G_ExitLevel();
+	break;
+
+	case 198:
+	// Exit to secret level
+	// killough 10/98: prevent zombies from exiting levels
+	if(thing->player && thing->player->health<=0)
+		break;
+	P_ChangeSwitchTexture(line,0);
+	G_SecretExitLevel();
+	break;
+	//jff end addition of new gun linedefs
     }
 }
 
@@ -1045,6 +1602,8 @@ P_ShootSpecialLine
 void P_PlayerInSpecialSector (player_t* player)
 {
     sector_t*	sector;
+    extern int showMessages;
+    static sector_t*	error;
 	
     sector = player->mo->subsector->sector;
 
@@ -1057,14 +1616,16 @@ void P_PlayerInSpecialSector (player_t* player)
     {
       case 5:
 	// HELLSLIME DAMAGE
-	if (!player->powers[pw_ironfeet])
+	// [crispy] no nukage damage with NOCLIP cheat
+	if (!player->powers[pw_ironfeet] && !(player->mo->flags & MF_NOCLIP))
 	    if (!(leveltime&0x1f))
 		P_DamageMobj (player->mo, NULL, NULL, 10);
 	break;
 	
       case 7:
 	// NUKAGE DAMAGE
-	if (!player->powers[pw_ironfeet])
+	// [crispy] no nukage damage with NOCLIP cheat
+	if (!player->powers[pw_ironfeet] && !(player->mo->flags & MF_NOCLIP))
 	    if (!(leveltime&0x1f))
 		P_DamageMobj (player->mo, NULL, NULL, 5);
 	break;
@@ -1073,8 +1634,9 @@ void P_PlayerInSpecialSector (player_t* player)
 	// SUPER HELLSLIME DAMAGE
       case 4:
 	// STROBE HURT
-	if (!player->powers[pw_ironfeet]
-	    || (P_Random()<5) )
+	// [crispy] no nukage damage with NOCLIP cheat
+	if ((!player->powers[pw_ironfeet]
+	    || (P_Random()<5) ) && !(player->mo->flags & MF_NOCLIP))
 	{
 	    if (!(leveltime&0x1f))
 		P_DamageMobj (player->mo, NULL, NULL, 20);
@@ -1099,9 +1661,14 @@ void P_PlayerInSpecialSector (player_t* player)
 	break;
 			
       default:
-	I_Error ("P_PlayerInSpecialSector: "
-		 "unknown special %i",
+	// [crispy] ignore unknown special sectors
+	if (error != sector)
+	{
+	error = sector;
+	fprintf (stderr, "P_PlayerInSpecialSector: "
+		 "unknown special %i\n",
 		 sector->special);
+	}
 	break;
     };
 }
@@ -1141,7 +1708,15 @@ void P_UpdateSpecials (void)
 	    if (anim->istexture)
 		texturetranslation[i] = pic;
 	    else
+	    {
+		// [crispy] add support for SMMU swirling flats
+		if (anim->speed > 65535 || anim->numpics == 1)
+		{
+		    flattranslation[i] = -1;
+		}
+		else
 		flattranslation[i] = pic;
+	    }
 	}
     }
 
@@ -1154,14 +1729,60 @@ void P_UpdateSpecials (void)
 	{
 	  case 48:
 	    // EFFECT FIRSTCOL SCROLL +
-	    sides[line->sidenum[0]].textureoffset += FRACUNIT;
+	    // [crispy] smooth texture scrolling
+	    sides[line->sidenum[0]].basetextureoffset += FRACUNIT;
+	    sides[line->sidenum[0]].textureoffset =
+	    sides[line->sidenum[0]].basetextureoffset;
 	    break;
+	  case 85:
+	    // [JN] (Boom) Scroll Texture Right
+	    // [crispy] smooth texture scrolling
+	    sides[line->sidenum[0]].basetextureoffset -= FRACUNIT;
+	    sides[line->sidenum[0]].textureoffset =
+	    sides[line->sidenum[0]].basetextureoffset;
+	    break;
+	  case 255:
+	  	// killough 3/2/98: scroll according to sidedef offsets
+	    sides[line->sidenum[0]].textureoffset -= sides[line->sidenum[0]].basetextureoffset;
+		sides[line->sidenum[0]].rowoffset +=  sides[line->sidenum[0]].baserowoffset;
+	    break;
+    case 252:
+    case 253:
+    {
+      mobj_t* thing;
+      fixed_t dx = line->dx >> SCROLL_SHIFT;  // direction and speed of scrolling
+      fixed_t dy = line->dy >> SCROLL_SHIFT;
+      dx = FixedMul(dx,CARRYFACTOR);
+      dy = FixedMul(dy,CARRYFACTOR);
+      int s;
+      for (s = -1; (s = P_FindSectorFromLineTag(line,s)) >= 0;)
+      {
+      sector_t* sec = &sectors[s];
+      fixed_t height = sec->floorheight;
+      fixed_t waterheight = sec->heightsec != -1 &&
+        sectors[sec->heightsec].floorheight > height ?
+        sectors[sec->heightsec].floorheight : INT_MIN;
+
+      // Handle all things in sector.
+      for (thing = sec->thinglist ; thing ; thing = thing->snext)
+        if (!((thing->flags & MF_NOCLIP) &&
+            (!(thing->flags & MF_NOGRAVITY || thing->z > height) ||
+             thing->z < waterheight)))
+        {
+          // Move objects only if on floor or underwater,
+          // non-floating, and clipped.
+          thing->momx += dx;
+          thing->momy += dy;
+        }
+      }
+    }
+      break;
 	}
     }
 
     
     //	DO BUTTONS
-    for (i = 0; i < MAXBUTTONS; i++)
+    for (i = 0; i < maxbuttons; i++)
 	if (buttonlist[i].btimer)
 	{
 	    buttonlist[i].btimer--;
@@ -1184,10 +1805,21 @@ void P_UpdateSpecials (void)
 			buttonlist[i].btexture;
 		    break;
 		}
-		S_StartSound(&buttonlist[i].soundorg,sfx_swtchn);
+		// [crispy] & [JN] Logically proper sound behavior.
+		// Do not play second "sfx_swtchn" on two-sided linedefs that attached to special sectors,
+		// and always play second sound on single-sided linedefs.
+		// if (!buttonlist[i].line->backsector /*|| !buttonlist[i].line->backsector->specialdata*/)
+		// {
+		// 	S_StartSoundOnce(buttonlist[i].soundorg,sfx_swtchn);
+		// }
+
+		S_StartSoundOnce(&buttonlist[i].soundorg,sfx_swtchn);
 		memset(&buttonlist[i],0,sizeof(button_t));
 	    }
 	}
+
+    // [crispy] draw fuzz effect independent of rendering frame rate
+    // R_SetFuzzPosTic();
 }
 
 // [crispy] smooth texture scrolling
@@ -1323,7 +1955,7 @@ int EV_DoDonut(line_t*	line)
 	s1 = &sectors[secnum];
 
 	// ALREADY MOVING?  IF SO, KEEP GOING...
-	if (s1->specialdata)
+	if (s1->floordata)
 	    continue;
 
 	rtn = 1;
@@ -1377,7 +2009,7 @@ int EV_DoDonut(line_t*	line)
 	    //	Spawn rising slime
 	    floor = Z_Malloc (sizeof(*floor), PU_LEVSPEC, 0);
 	    P_AddThinker (&floor->thinker);
-	    s2->specialdata = floor;
+	    s2->floordata = floor;
 	    floor->thinker.function.acp1 = (actionf_p1) T_MoveFloor;
 	    floor->type = donutRaise;
 	    floor->crush = false;
@@ -1391,7 +2023,7 @@ int EV_DoDonut(line_t*	line)
 	    //	Spawn lowering donut-hole
 	    floor = Z_Malloc (sizeof(*floor), PU_LEVSPEC, 0);
 	    P_AddThinker (&floor->thinker);
-	    s1->specialdata = floor;
+	    s1->floordata = floor;
 	    floor->thinker.function.acp1 = (actionf_p1) T_MoveFloor;
 	    floor->type = lowerFloor;
 	    floor->crush = false;
@@ -1405,7 +2037,31 @@ int EV_DoDonut(line_t*	line)
     return rtn;
 }
 
+// Hash the sector tags across the sectors and linedefs.
+static void P_InitTagLists(void)
+{
+  register int i;
 
+  for (i=numsectors; --i>=0; )        // Initially make all slots empty.
+    sectors[i].firsttag = -1;
+  for (i=numsectors; --i>=0; )        // Proceed from last to first sector
+    {                                 // so that lower sectors appear first
+      int j = (unsigned) sectors[i].tag % (unsigned) numsectors; // Hash func
+      sectors[i].nexttag = sectors[j].firsttag;   // Prepend sector to chain
+      sectors[j].firsttag = i;
+    }
+
+  // killough 4/17/98: same thing, only for linedefs
+
+  for (i=numlines; --i>=0; )        // Initially make all slots empty.
+    lines[i].firsttag = -1;
+  for (i=numlines; --i>=0; )        // Proceed from last to first linedef
+    {                               // so that lower linedefs appear first
+      int j = (unsigned) lines[i].tag % (unsigned) numlines; // Hash func
+      lines[i].nexttag = lines[j].firsttag;   // Prepend linedef to chain
+      lines[j].firsttag = i;
+    }
+}
 
 //
 // SPECIAL SPAWNING
@@ -1503,6 +2159,10 @@ void P_SpawnSpecials (void)
 	}
     }
 
+	// P_InitTagLists() must be called before P_FindSectorFromLineTag()
+  	// or P_FindLineFromLineTag() can be called.
+
+  	P_InitTagLists();   // killough 1/30/98: Create xref tables for tags
     
     //	Init line EFFECTs
     numlinespecials = 0;
@@ -1511,6 +2171,10 @@ void P_SpawnSpecials (void)
 	switch(lines[i].special)
 	{
 	  case 48:
+	  case 85:  // [crispy] [JN] (Boom) Scroll Texture Right
+	  case 255: // killough 3/2/98: scroll according to sidedef offsets
+    case 252: // carry things
+    case 253: // and scroll floor
             if (numlinespecials >= MAXLINEANIMS)
             {
                 I_Error("Too many scrolling wall linedefs! "
@@ -1519,6 +2183,51 @@ void P_SpawnSpecials (void)
 	    // EFFECT FIRSTCOL SCROLL+
 	    linespeciallist[numlinespecials] = &lines[i];
 	    numlinespecials++;
+	    break;
+
+    // killough 3/7/98:
+    // support for drawn heights coming from different sector
+    case 242:
+    {
+      sector_t* sec = sides[lines[i].sidenum[0]].sector;
+      int s;
+      for (s = -1; (s = P_FindSectorFromLineTag(&lines[i],s)) >= 0;)
+        sectors[s].heightsec = sec->id;
+    }
+      break;
+
+    case 213:
+    {
+      sector_t* sec = sides[lines[i].sidenum[0]].sector;
+      int s;
+      for (s = -1; (s = P_FindSectorFromLineTag(&lines[i],s)) >= 0;)
+        sectors[s].floorlightsec = sec->id;
+    }
+      break;
+
+    case 261:
+    {
+      sector_t* sec = sides[lines[i].sidenum[0]].sector;
+      int s;
+      for (s = -1; (s = P_FindSectorFromLineTag(&lines[i],s)) >= 0;)
+        sectors[s].ceilinglightsec = sec->id;
+    }
+      break;
+
+	  // [crispy] add support for MBF sky tranfers
+	  case 271:
+	  case 272:
+	    {
+		int secnum;
+
+		for (secnum = 0; secnum < numsectors; secnum++)
+		{
+		    if (sectors[secnum].tag == lines[i].tag)
+		    {
+			sectors[secnum].sky = i | PL_SKYFLAT;
+		    }
+		}
+	    }
 	    break;
 	}
     }
@@ -1531,9 +2240,443 @@ void P_SpawnSpecials (void)
     for (i = 0;i < MAXPLATS;i++)
 	activeplats[i] = NULL;
     
-    for (i = 0;i < MAXBUTTONS;i++)
+    for (i = 0;i < maxbuttons;i++)
 	memset(&buttonlist[i],0,sizeof(button_t));
 
     // UNUSED: no horizonal sliders.
     //	P_InitSlidingDoorFrames();
+}
+
+//
+// P_SectorActive()
+//
+// Passed a linedef special class (floor, ceiling, lighting) and a sector
+// returns whether the sector is already busy with a linedef special of the
+// same class. If old demo compatibility true, all linedef special classes
+// are the same.
+//
+// jff 2/23/98 added to prevent old demos from
+//  succeeding in starting multiple specials on one sector
+//
+boolean P_SectorActive(special_e t, const sector_t *sec)
+{
+    switch (t) // return whether thinker of same type is active
+    {
+      case floor_special:
+        return sec->floordata != NULL;
+      case ceiling_special:
+        return sec->ceilingdata != NULL;
+      case lighting_special:
+        return sec->lightingdata != NULL;
+    }
+  return true; // don't know which special, must be active, shouldn't be here
+}
+
+//
+// P_FindNextLowestFloor()
+//
+// Passed a sector and a floor height, returns the fixed point value
+// of the largest floor height in a surrounding sector smaller than
+// the floor height passed. If no such height exists the floorheight
+// passed is returned.
+//
+// jff 02/03/98 Twiddled Lee's P_FindNextHighestFloor to make this
+//
+fixed_t P_FindNextLowestFloor(sector_t *sec, int currentheight)
+{
+  sector_t *other;
+  int i;
+
+  for (i=0 ;i < sec->linecount ; i++)
+    if ((other = getNextSector(sec->lines[i],sec)) &&
+         other->floorheight < currentheight)
+    {
+      int height = other->floorheight;
+      while (++i < sec->linecount)
+        if ((other = getNextSector(sec->lines[i],sec)) &&
+            other->floorheight > height &&
+            other->floorheight < currentheight)
+          height = other->floorheight;
+      return height;
+    }
+  return currentheight;
+}
+
+//
+// P_FindShortestTextureAround()
+//
+// Passed a sector number, returns the shortest lower texture on a
+// linedef bounding the sector.
+//
+// Note: If no lower texture exists 32000*FRACUNIT is returned.
+//       but if compatibility then INT_MAX is returned
+//
+// jff 02/03/98 Add routine to find shortest lower texture
+//
+fixed_t P_FindShortestTextureAround(int secnum)
+{
+  int minsize = INT_MAX;
+  side_t*     side;
+  int i;
+  sector_t *sec = &sectors[secnum];
+
+	minsize = 32000<<FRACBITS; //jff 3/13/98 prevent overflow in height calcs
+
+  for (i = 0; i < sec->linecount; i++)
+  {
+    if (twoSided(secnum, i))
+    {
+      side = getSide(secnum,i,0);
+      if (side->bottomtexture > 0)  //jff 8/14/98 texture 0 is a placeholder
+        if (textureheight[side->bottomtexture] < minsize)
+          minsize = textureheight[side->bottomtexture];
+      side = getSide(secnum,i,1);
+      if (side->bottomtexture > 0)  //jff 8/14/98 texture 0 is a placeholder
+        if (textureheight[side->bottomtexture] < minsize)
+          minsize = textureheight[side->bottomtexture];
+    }
+  }
+  return minsize;
+}
+
+//
+// P_FindShortestUpperAround()
+//
+// Passed a sector number, returns the shortest upper texture on a
+// linedef bounding the sector.
+//
+// Note: If no upper texture exists 32000*FRACUNIT is returned.
+//       but if compatibility then INT_MAX is returned
+//
+// jff 03/20/98 Add routine to find shortest upper texture
+//
+fixed_t P_FindShortestUpperAround(int secnum)
+{
+  int minsize = INT_MAX;
+  side_t*     side;
+  int i;
+  sector_t *sec = &sectors[secnum];
+
+  
+  minsize = 32000<<FRACBITS; //jff 3/13/98 prevent overflow
+                               // in height calcs
+  for (i = 0; i < sec->linecount; i++)
+  {
+    if (twoSided(secnum, i))
+    {
+      side = getSide(secnum,i,0);
+      if (side->toptexture > 0)     //jff 8/14/98 texture 0 is a placeholder
+        if (textureheight[side->toptexture] < minsize)
+          minsize = textureheight[side->toptexture];
+      side = getSide(secnum,i,1);
+      if (side->toptexture > 0)     //jff 8/14/98 texture 0 is a placeholder
+        if (textureheight[side->toptexture] < minsize)
+          minsize = textureheight[side->toptexture];
+    }
+  }
+  return minsize;
+}
+
+//
+// P_FindModelCeilingSector()
+//
+// Passed a ceiling height and a sector number, return a pointer to a
+// a sector with that ceiling height across the lowest numbered two sided
+// line surrounding the sector.
+//
+// Note: If no sector at that height bounds the sector passed, return NULL
+//
+// jff 02/03/98 Add routine to find numeric model ceiling
+//  around a sector specified by sector number
+//  used only from generalized ceiling types
+// jff 3/14/98 change first parameter to plain height to allow call
+//  from routine not using ceiling_t
+//
+sector_t *P_FindModelCeilingSector(fixed_t ceildestheight,int secnum)
+{
+  int i;
+  sector_t *sec=NULL;
+  int linecount;
+
+  sec = &sectors[secnum]; //jff 3/2/98 woops! better do this
+  //jff 5/23/98 don't disturb sec->linecount while searching
+  // but allow early exit in old demos
+  linecount = sec->linecount;
+  for (i = 0; i < (/*demo_compatibility &&*/ sec->linecount<linecount?
+                   sec->linecount : linecount); i++)
+  {
+    if ( twoSided(secnum, i) )
+    {
+      if (getSide(secnum,i,0)->sector - sectors == secnum)
+          sec = getSector(secnum,i,1);
+      else
+          sec = getSector(secnum,i,0);
+
+      if (sec->ceilingheight == ceildestheight)
+        return sec;
+    }
+  }
+  return NULL;
+}
+
+//
+// P_FindModelFloorSector()
+//
+// Passed a floor height and a sector number, return a pointer to a
+// a sector with that floor height across the lowest numbered two sided
+// line surrounding the sector.
+//
+// Note: If no sector at that height bounds the sector passed, return NULL
+//
+// jff 02/03/98 Add routine to find numeric model floor
+//  around a sector specified by sector number
+// jff 3/14/98 change first parameter to plain height to allow call
+//  from routine not using floormove_t
+//
+sector_t *P_FindModelFloorSector(fixed_t floordestheight,int secnum)
+{
+  int i;
+  sector_t *sec=NULL;
+  int linecount;
+
+  sec = &sectors[secnum]; //jff 3/2/98 woops! better do this
+  //jff 5/23/98 don't disturb sec->linecount while searching
+  // but allow early exit in old demos
+  linecount = sec->linecount;
+  for (i = 0; i < (/*demo_compatibility &&*/ sec->linecount<linecount?
+                   sec->linecount : linecount); i++)
+  {
+    if ( twoSided(secnum, i) )
+    {
+      if (getSide(secnum,i,0)->sector - sectors == secnum)
+          sec = getSector(secnum,i,1);
+      else
+          sec = getSector(secnum,i,0);
+
+      if (sec->floorheight == floordestheight)
+        return sec;
+    }
+  }
+  return NULL;
+}
+
+//
+// P_FindNextLowestCeiling()
+//
+// Passed a sector and a ceiling height, returns the fixed point value
+// of the largest ceiling height in a surrounding sector smaller than
+// the ceiling height passed. If no such height exists the ceiling height
+// passed is returned.
+//
+// jff 02/03/98 Twiddled Lee's P_FindNextHighestFloor to make this
+//
+fixed_t P_FindNextLowestCeiling(sector_t *sec, int currentheight)
+{
+  sector_t *other;
+  int i;
+
+  for (i=0 ;i < sec->linecount ; i++)
+    if ((other = getNextSector(sec->lines[i],sec)) &&
+        other->ceilingheight < currentheight)
+    {
+      int height = other->ceilingheight;
+      while (++i < sec->linecount)
+        if ((other = getNextSector(sec->lines[i],sec)) &&
+            other->ceilingheight > height &&
+            other->ceilingheight < currentheight)
+          height = other->ceilingheight;
+      return height;
+    }
+  return currentheight;
+}
+
+//
+// P_FindNextHighestCeiling()
+//
+// Passed a sector and a ceiling height, returns the fixed point value
+// of the smallest ceiling height in a surrounding sector larger than
+// the ceiling height passed. If no such height exists the ceiling height
+// passed is returned.
+//
+// jff 02/03/98 Twiddled Lee's P_FindNextHighestFloor to make this
+//
+fixed_t P_FindNextHighestCeiling(sector_t *sec, int currentheight)
+{
+  sector_t *other;
+  int i;
+
+  for (i=0 ;i < sec->linecount ; i++)
+    if ((other = getNextSector(sec->lines[i],sec)) &&
+         other->ceilingheight > currentheight)
+    {
+      int height = other->ceilingheight;
+      while (++i < sec->linecount)
+        if ((other = getNextSector(sec->lines[i],sec)) &&
+            other->ceilingheight < height &&
+            other->ceilingheight > currentheight)
+          height = other->ceilingheight;
+      return height;
+    }
+  return currentheight;
+}
+
+//
+// P_CanUnlockGenDoor()
+//
+// Passed a generalized locked door linedef and a player, returns whether
+// the player has the keys necessary to unlock that door.
+//
+// Note: The linedef passed MUST be a generalized locked door type
+//       or results are undefined.
+//
+// jff 02/05/98 routine added to test for unlockability of
+//  generalized locked doors
+//
+boolean P_CanUnlockGenDoor
+( line_t* line,
+  player_t* player)
+{
+  // does this line special distinguish between skulls and keys?
+  int skulliscard = (line->special & LockedNKeys)>>LockedNKeysShift;
+
+  // determine for each case of lock type if player's keys are adequate
+  switch((line->special & LockedKey)>>LockedKeyShift)
+  {
+    case AnyKey:
+      if
+      (
+        !player->cards[it_redcard] &&
+        !player->cards[it_redskull] &&
+        !player->cards[it_bluecard] &&
+        !player->cards[it_blueskull] &&
+        !player->cards[it_yellowcard] &&
+        !player->cards[it_yellowskull]
+      )
+      {
+        player->message = DEH_String(PD_ANY);; // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case RCard:
+      if
+      (
+        !player->cards[it_redcard] &&
+        (!skulliscard || !player->cards[it_redskull])
+      )
+      {
+        player->message = DEH_String(PD_REDK);; // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case BCard:
+      if
+      (
+        !player->cards[it_bluecard] &&
+        (!skulliscard || !player->cards[it_blueskull])
+      )
+      {
+        player->message = DEH_String(PD_BLUEK); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case YCard:
+      if
+      (
+        !player->cards[it_yellowcard] &&
+        (!skulliscard || !player->cards[it_yellowskull])
+      )
+      {
+        player->message = DEH_String(PD_YELLOWK); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case RSkull:
+      if
+      (
+        !player->cards[it_redskull] &&
+        (!skulliscard || !player->cards[it_redcard])
+      )
+      {
+        player->message = DEH_String(PD_REDK); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case BSkull:
+      if
+      (
+        !player->cards[it_blueskull] &&
+        (!skulliscard || !player->cards[it_bluecard])
+      )
+      {
+        player->message = DEH_String(PD_BLUEK); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case YSkull:
+      if
+      (
+        !player->cards[it_yellowskull] &&
+        (!skulliscard || !player->cards[it_yellowcard])
+      )
+      {
+        player->message = DEH_String(PD_YELLOWK); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+    case AllKeys:
+      if
+      (
+        !skulliscard &&
+        (
+          !player->cards[it_redcard] ||
+          !player->cards[it_redskull] ||
+          !player->cards[it_bluecard] ||
+          !player->cards[it_blueskull] ||
+          !player->cards[it_yellowcard] ||
+          !player->cards[it_yellowskull]
+        )
+      )
+      {
+        player->message = DEH_String(PD_ALL6); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      if
+      (
+        skulliscard &&
+        (
+          (!player->cards[it_redcard] &&
+            !player->cards[it_redskull]) ||
+          (!player->cards[it_bluecard] &&
+            !player->cards[it_blueskull]) ||
+          (!player->cards[it_yellowcard] &&
+            !player->cards[it_yellowskull])
+        )
+      )
+      {
+        player->message = DEH_String(PD_ALL3); // Ty 03/27/98 - externalized
+        S_StartSound(player->mo,sfx_oof);             // killough 3/20/98
+        return false;
+      }
+      break;
+  }
+  return true;
+}
+
+// killough 4/16/98: Same thing, only for linedefs
+
+int P_FindLineFromLineTag(line_t *line, int start)
+{
+  start = start >= 0 ? lines[start].nexttag :
+    lines[(unsigned) line->tag % (unsigned) numlines].firsttag;
+  while (start >= 0 && lines[start].tag != line->tag)
+    start = lines[start].nexttag;
+  return start;
 }

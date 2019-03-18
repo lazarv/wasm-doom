@@ -60,3 +60,21 @@ fixed_t FixedDiv(fixed_t a, fixed_t b)
     }
 }
 
+/* CPhipps -
+ * FixedMod - returns a % b, guaranteeing 0<=a<b
+ * (notice that the C standard for % does not guarantee this)
+ */
+
+fixed_t FixedMod(fixed_t a, fixed_t b)
+{
+  if (b & (b-1)) {
+    fixed_t r = a % b;
+    return ((r<0) ? r+b : r);
+  } else
+    return (a & (b-1));
+}
+
+fixed_t Scale(fixed_t a, fixed_t b, fixed_t c)
+{
+	return (fixed_t)(((int64_t)a*b)/c);
+}

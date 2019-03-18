@@ -36,15 +36,15 @@ static boolean deh_initialized = false;
 
 // If true, we can parse [STRINGS] sections in BEX format.
 
-boolean deh_allow_extended_strings = false;
+boolean deh_allow_extended_strings = true;
 
 // If true, we can do long string replacements.
 
-boolean deh_allow_long_strings = false;
+boolean deh_allow_long_strings = true;
 
 // If true, we can do cheat replacements longer than the originals.
 
-boolean deh_allow_long_cheats = false;
+boolean deh_allow_long_cheats = true;
 
 // If false, dehacked cheat replacements are ignored.
 
@@ -332,7 +332,6 @@ static void DEH_ParseContext(deh_context_t *context)
                     current_section->end(context, tag);
                 }
 
-                //printf("end %s tag\n", current_section->name);
                 current_section = NULL;
             }
         }
@@ -354,12 +353,8 @@ static void DEH_ParseContext(deh_context_t *context)
 
                 if (current_section != NULL)
                 {
+
                     tag = current_section->start(context, line);
-                    //printf("started %s tag\n", section_name);
-                }
-                else
-                {
-                    //printf("unknown section name %s\n", section_name);
                 }
             }
         }
@@ -376,15 +371,6 @@ int DEH_LoadFile(const char *filename)
     {
         DEH_Init();
     }
-
-    // Before parsing a new file, reset special override flags to false.
-    // Magic comments should only apply to the file in which they were
-    // defined, and shouldn't carry over to subsequent files as well.
-    deh_allow_long_strings = false;
-    deh_allow_long_cheats = false;
-    deh_allow_extended_strings = false;
-
-    printf(" loading %s\n", filename);
 
     context = DEH_OpenFile(filename);
 
@@ -419,9 +405,9 @@ int DEH_LoadLump(int lumpnum, boolean allow_long, boolean allow_error)
     }
 
     // Reset all special flags to defaults.
-    deh_allow_long_strings = allow_long;
-    deh_allow_long_cheats = allow_long;
-    deh_allow_extended_strings = false;
+    // deh_allow_long_strings = allow_long;
+    // deh_allow_long_cheats = allow_long;
+    // deh_allow_extended_strings = false;
 
     context = DEH_OpenLump(lumpnum);
 

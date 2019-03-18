@@ -102,13 +102,27 @@ typedef struct
 //
 typedef	struct
 {
+    int id;
+
     fixed_t	floorheight;
     fixed_t	ceilingheight;
     short	floorpic;
     short	ceilingpic;
     short	lightlevel;
     short	special;
+    short   oldspecial;      //jff 2/16/98 remembers if sector WAS secret (automap)
     short	tag;
+
+    // jff 2/26/98 lockout machinery for stairbuilding
+    int stairlock;   // -2 on first locked -1 after thinker done 0 normally
+    int prevsec;     // -1 or number of sector for previous step
+    int nextsec;     // -1 or number of next step sector
+    int nexttag,firsttag;  // killough 1/30/98: improves searches for tags.
+
+    // killough 3/7/98: support flat heights drawn at another sector's heights
+    int heightsec;    // other sector, or -1 if no other sector
+
+    int bottommap, midmap, topmap; // killough 4/4/98: dynamic colormaps
 
     // 0 = untraversed, 1,2 = sndlines -1
     int		soundtraversed;
@@ -130,6 +144,10 @@ typedef	struct
 
     // thinker_t for reversable actions
     void*	specialdata;
+
+    void *floordata;    // jff 2/22/98 make thinkers on
+    void *ceilingdata;  // floors, ceilings, lighting,
+    void *lightingdata; // independent of one another
 
     int			linecount;
     struct line_s**	lines;	// [linecount] size
@@ -158,6 +176,13 @@ typedef	struct
     //      the renderer.
     fixed_t	interpfloorheight;
     fixed_t	interpceilingheight;
+
+    // killough 3/7/98: floor and ceiling texture offsets
+    fixed_t   floor_xoffs,   floor_yoffs;
+    fixed_t ceiling_xoffs, ceiling_yoffs;
+
+    // killough 4/11/98: support for lightlevels coming from another sector
+    int floorlightsec, ceilinglightsec;
 } sector_t;
 
 
@@ -186,6 +211,13 @@ typedef struct
     
     // [crispy] smooth texture scrolling
     fixed_t	basetextureoffset;
+    fixed_t baserowoffset;
+
+    // killough 4/4/98, 4/11/98: highest referencing special linedef's type,
+    // or lump number of special effect. Allows texture names to be overloaded
+    // for other functions.
+
+    short special;
 } side_t;
 
 
@@ -243,6 +275,9 @@ typedef struct line_s
 
     // [crispy] calculate sound origin of line to be its midpoint
     degenmobj_t	soundorg;
+
+    int tranlump;          // killough 4/11/98: translucency filter, -1 == none
+    int firsttag,nexttag;  // killough 4/17/98: improves searches for tags.
 } line_t;
 
 
@@ -276,6 +311,7 @@ typedef struct
     fixed_t	offset;
 
     angle_t	angle;
+    angle_t pangle; // re-calculated angle used for rendering
 
     side_t*	sidedef;
     line_t*	linedef;
@@ -410,6 +446,9 @@ typedef struct vissprite_s
     int			mobjflags;
     // [crispy] color translation table for blood colored by monster class
     byte*			translation;
+
+    // killough 3/7/98: support flat heights drawn at another sector's heights
+    int heightsec;    // other sector, or -1 if no other sector
     
 } vissprite_t;
 

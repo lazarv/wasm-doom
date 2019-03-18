@@ -43,6 +43,8 @@
 
 #include "p_extnodes.h" // [crispy] support extended node formats
 
+#include "v_patch.h"
+
 void	P_SpawnMapThing (mapthing_t*	mthing);
 
 
@@ -370,6 +372,7 @@ void P_LoadSectors (int lump)
     ss = sectors;
     for (i=0 ; i<numsectors ; i++, ss++, ms++)
     {
+    ss->id = i;
 	ss->floorheight = SHORT(ms->floorheight)<<FRACBITS;
 	ss->ceilingheight = SHORT(ms->ceilingheight)<<FRACBITS;
 	ss->floorpic = R_FlatNumForName(ms->floorpic);
@@ -380,15 +383,40 @@ void P_LoadSectors (int lump)
 	ss->thinglist = NULL;
 	// [crispy] WiggleFix: [kb] for R_FixWiggle()
 	ss->cachedheight = 0;
-        // [AM] Sector interpolation.  Even if we're
-        //      not running uncapped, the renderer still
-        //      uses this data.
-        ss->oldfloorheight = ss->floorheight;
-        ss->interpfloorheight = ss->floorheight;
-        ss->oldceilingheight = ss->ceilingheight;
-        ss->interpceilingheight = ss->ceilingheight;
-        // [crispy] inhibit sector interpolation during the 0th gametic
-        ss->oldgametic = -1;
+    // [AM] Sector interpolation.  Even if we're
+    //      not running uncapped, the renderer still
+    //      uses this data.
+    ss->oldfloorheight = ss->floorheight;
+    ss->interpfloorheight = ss->floorheight;
+    ss->oldceilingheight = ss->ceilingheight;
+    ss->interpceilingheight = ss->ceilingheight;
+    // [crispy] inhibit sector interpolation during the 0th gametic
+    ss->oldgametic = -1;
+
+    ss->nextsec = -1; //jff 2/26/98 add fields to support locking out
+    ss->prevsec = -1; // stair retriggering until build completes
+
+    // killough 3/7/98:
+    ss->floor_xoffs = 0;
+    ss->floor_yoffs = 0;      // floor and ceiling flats offsets
+    ss->ceiling_xoffs = 0;
+    ss->ceiling_yoffs = 0;
+    ss->heightsec = -1;       // sector used to get floor and ceiling height
+    ss->floorlightsec = -1;   // sector used to get floor lighting
+    // killough 3/7/98: end changes
+
+    // killough 4/11/98 sector used to get ceiling lighting:
+    ss->ceilinglightsec = -1;
+
+    // killough 4/4/98: colormaps:
+    ss->bottommap = ss->midmap = ss->topmap = 0;
+
+    // killough 10/98: sky textures coming from sidedefs:
+    ss->sky = 0;
+
+    // [kb] For R_WiggleFix
+    ss->cachedheight = 0;
+    ss->scaleindex = 0;
     }
 	
     W_ReleaseLumpNum(lump);
@@ -546,45 +574,46 @@ void P_LoadLineDefs (int lump)
     warn = warn2 = 0; // [crispy] warn about invalid linedefs
     for (i=0 ; i<numlines ; i++, mld++, ld++)
     {
+    ld->tranlump = -1;
 	ld->flags = (unsigned short)SHORT(mld->flags); // [crispy] extended nodes
 	ld->special = SHORT(mld->special);
 	// [crispy] warn about unknown linedef types
-	if ((unsigned short) ld->special > 141)
-	{
-	    fprintf(stderr, "P_LoadLineDefs: Unknown special %d at line %d.\n", ld->special, i);
-	    warn++;
-	}
+	// if ((unsigned short) ld->special > 141)
+	// {
+	//     fprintf(stderr, "P_LoadLineDefs: Unknown special %d at line %d.\n", ld->special, i);
+	//     warn++;
+	// }
 	ld->tag = SHORT(mld->tag);
 	// [crispy] warn about special linedefs without tag
-	if (ld->special && !ld->tag)
-	{
-	    switch (ld->special)
-	    {
-		case 1:	// Vertical Door
-		case 26:	// Blue Door/Locked
-		case 27:	// Yellow Door /Locked
-		case 28:	// Red Door /Locked
-		case 31:	// Manual door open
-		case 32:	// Blue locked door open
-		case 33:	// Red locked door open
-		case 34:	// Yellow locked door open
-		case 117:	// Blazing door raise
-		case 118:	// Blazing door open
-		case 271:	// MBF sky transfers
-		case 272:
-		case 48:	// Scroll Wall Left
-		case 85:	// [crispy] [JN] (Boom) Scroll Texture Right
-		case 11:	// s1 Exit level
-		case 51:	// s1 Secret exit
-		case 52:	// w1 Exit level
-		case 124:	// w1 Secret exit
-		    break;
-		default:
-		    fprintf(stderr, "P_LoadLineDefs: Special linedef %d without tag.\n", i);
-		    warn2++;
-		    break;
-	    }
-	}
+	// if (ld->special && !ld->tag)
+	// {
+	//     switch (ld->special)
+	//     {
+	// 	case 1:	// Vertical Door
+	// 	case 26:	// Blue Door/Locked
+	// 	case 27:	// Yellow Door /Locked
+	// 	case 28:	// Red Door /Locked
+	// 	case 31:	// Manual door open
+	// 	case 32:	// Blue locked door open
+	// 	case 33:	// Red locked door open
+	// 	case 34:	// Yellow locked door open
+	// 	case 117:	// Blazing door raise
+	// 	case 118:	// Blazing door open
+	// 	case 271:	// MBF sky transfers
+	// 	case 272:
+	// 	case 48:	// Scroll Wall Left
+	// 	case 85:	// [crispy] [JN] (Boom) Scroll Texture Right
+	// 	case 11:	// s1 Exit level
+	// 	case 51:	// s1 Secret exit
+	// 	case 52:	// w1 Exit level
+	// 	case 124:	// w1 Secret exit
+	// 	    break;
+	// 	default:
+	// 	    fprintf(stderr, "P_LoadLineDefs: Special linedef %d without tag.\n", i);
+	// 	    warn2++;
+	// 	    break;
+	//     }
+	// }
 
 	v1 = ld->v1 = &vertexes[(unsigned short)SHORT(mld->v1)]; // [crispy] extended nodes
 	v2 = ld->v2 = &vertexes[(unsigned short)SHORT(mld->v2)]; // [crispy] extended nodes
@@ -636,7 +665,7 @@ void P_LoadLineDefs (int lump)
 	if (ld->sidenum[0] == NO_INDEX)
 	{
 	    ld->sidenum[0] = 0;
-	    fprintf(stderr, "P_LoadLineDefs: linedef %d without first sidedef!\n", i);
+	    // fprintf(stderr, "P_LoadLineDefs: linedef %d without first sidedef!\n", i);
 	}
 
 	if (ld->sidenum[0] != NO_INDEX) // [crispy] extended nodes
@@ -648,24 +677,56 @@ void P_LoadLineDefs (int lump)
 	    ld->backsector = sides[ld->sidenum[1]].sector;
 	else
 	    ld->backsector = 0;
+
+    if (ld->sidenum[0] != NO_INDEX && ld->special)
+        sides[ld->sidenum[0]].special = ld->special;
     }
 
     // [crispy] warn about unknown linedef types
-    if (warn)
-    {
-	fprintf(stderr, "P_LoadLineDefs: Found %d line%s with unknown linedef type.\n", warn, (warn > 1) ? "s" : "");
-    }
-    // [crispy] warn about special linedefs without tag
-    if (warn2)
-    {
-	fprintf(stderr, "P_LoadLineDefs: Found %d special linedef%s without tag.\n", warn2, (warn2 > 1) ? "s" : "");
-    }
-    if (warn || warn2)
-    {
-	fprintf(stderr, "THIS MAP MAY NOT WORK AS EXPECTED!\n");
-    }
+    // if (warn)
+    // {
+	// fprintf(stderr, "P_LoadLineDefs: Found %d line%s with unknown linedef type.\n", warn, (warn > 1) ? "s" : "");
+    // }
+    // // [crispy] warn about special linedefs without tag
+    // if (warn2)
+    // {
+	// fprintf(stderr, "P_LoadLineDefs: Found %d special linedef%s without tag.\n", warn2, (warn2 > 1) ? "s" : "");
+    // }
+    // if (warn || warn2)
+    // {
+	// fprintf(stderr, "THIS MAP MAY NOT WORK AS EXPECTED!\n");
+    // }
 
     W_ReleaseLumpNum(lump);
+}
+
+// killough 4/4/98: delay using sidedefs until they are loaded
+// killough 5/3/98: reformatted, cleaned up
+
+static void P_LoadLineDefs2(int lump)
+{
+  int i = numlines;
+  line_t *ld = lines;
+  for (;i--;ld++)
+    {
+    //   ld->frontsector = sides[ld->sidenum[0]].sector; //e6y: Can't be NO_INDEX here
+    //   ld->backsector  = ld->sidenum[1]!=NO_INDEX ? sides[ld->sidenum[1]].sector : 0;
+      switch (ld->special)
+        {                       // killough 4/11/98: handle special types
+          int lump, j;
+
+        case 260:               // killough 4/11/98: translucent 2s textures
+            // transparentpresent = true;//e6y
+            lump = sides[*ld->sidenum].special; // translucency from sidedef
+            if (!ld->tag)                       // if tag==0,
+              ld->tranlump = lump;              // affect this linedef only
+            else
+              for (j=0;j<numlines;j++)          // if tag!=0,
+                if (lines[j].tag == ld->tag)    // affect all matching linedefs
+                  lines[j].tranlump = lump;
+            break;
+        }
+    }
 }
 
 
@@ -678,7 +739,6 @@ void P_LoadSideDefs (int lump)
     int			i;
     mapsidedef_t*	msd;
     side_t*		sd;
-	
     numsides = W_LumpLength (lump) / sizeof(mapsidedef_t);
     sides = Z_Malloc (numsides*sizeof(side_t),PU_LEVEL,0);	
     memset (sides, 0, numsides*sizeof(side_t));
@@ -693,14 +753,76 @@ void P_LoadSideDefs (int lump)
 	sd->toptexture = R_TextureNumForName(msd->toptexture);
 	sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
 	sd->midtexture = R_TextureNumForName(msd->midtexture);
-	sd->sector = &sectors[SHORT(msd->sector)];
+	// sd->sector = &sectors[SHORT(msd->sector)];
+
+    { /* cph 2006/09/30 - catch out-of-range sector numbers; use sector 0 instead */
+    unsigned short sector_num = SHORT(msd->sector);
+    if (sector_num >= numsectors) {
+        fprintf(stderr,"P_LoadSideDefs2: sidedef %i has out-of-range sector num %u\n", i, sector_num);
+        sector_num = 0;
+    }
+    sd->sector = &sectors[sector_num];
+    }
+
 	// [crispy] smooth texture scrolling
 	sd->basetextureoffset = sd->textureoffset;
+    sd->baserowoffset = sd->rowoffset;
     }
 
     W_ReleaseLumpNum(lump);
 }
 
+// killough 4/4/98: delay using texture names until
+// after linedefs are loaded, to allow overloading.
+// killough 5/3/98: reformatted, cleaned up
+
+void P_LoadSideDefs2(int lump)
+{
+  int  i;
+  byte*	data = W_CacheLumpNum (lump,PU_STATIC);
+  side_t* sd = sides;
+  mapsidedef_t* msd = (mapsidedef_t *)data;
+  for (i=0; i<numsides; i++, msd++, sd++)
+    {
+      sector_t *sec = sd->sector;
+
+      // killough 4/4/98: allow sidedef texture names to be overloaded
+      // killough 4/11/98: refined to allow colormaps to work as wall
+      // textures if invalid as colormaps but valid as textures.
+      switch (sd->special)
+        {
+        case 242:                       // variable colormap via 242 linedef
+          sd->bottomtexture =
+            (sec->bottommap =   R_ColormapNumForName(msd->bottomtexture)) < 0 ?
+            sec->bottommap = 0, R_TextureNumForName(msd->bottomtexture): 0 ;
+          sd->midtexture =
+            (sec->midmap =   R_ColormapNumForName(msd->midtexture)) < 0 ?
+            sec->midmap = 0, R_TextureNumForName(msd->midtexture)  : 0 ;
+          sd->toptexture =
+            (sec->topmap =   R_ColormapNumForName(msd->toptexture)) < 0 ?
+            sec->topmap = 0, R_TextureNumForName(msd->toptexture)  : 0 ;
+          break;
+
+        case 260: // killough 4/11/98: apply translucency to 2s normal texture
+          sd->midtexture = strncasecmp("TRANMAP", msd->midtexture, 8) ?
+            (sd->special = W_CheckNumForName(msd->midtexture)) < 0 ||
+            W_LumpLength(sd->special) != 65536 ?
+            sd->special=0, R_TextureNumForName(msd->midtexture) :
+              (sd->special++, 0) : (sd->special=0);
+          sd->toptexture = R_TextureNumForName(msd->toptexture);
+          sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
+          break;
+
+        default:                        // normal cases
+          sd->midtexture = R_TextureNumForName(msd->midtexture);
+          sd->toptexture = R_TextureNumForName(msd->toptexture);
+          sd->bottomtexture = R_TextureNumForName(msd->bottomtexture);
+          break;
+        }
+    }
+
+    W_ReleaseLumpNum(lump);
+}
 
 //
 // P_LoadBlockMap
@@ -933,6 +1055,20 @@ static void P_RemoveSlimeTrails(void)
     }
 }
 
+// static void R_CalcSegsLength(void)
+// {
+//   int i;
+//   for (i=0; i<numsegs; i++)
+//   {
+//     seg_t *li = segs+i;
+//     int64_t dx = (int64_t)li->v2->r_x - li->v1->r_x;
+//     int64_t dy = (int64_t)li->v2->r_y - li->v1->r_y;
+//     li->length = (int64_t)sqrt((double)dx*dx + (double)dy*dy);
+//     // [crispy] re-calculate angle used for rendering
+//     li->pangle = R_PointToAngleEx2(li->v1->r_x, li->v1->r_y, li->v2->r_x, li->v2->r_y);
+//   }
+// }
+
 // Pad the REJECT lump with extra data when the lump is too small,
 // to simulate a REJECT buffer overflow in Vanilla Doom.
 
@@ -1150,6 +1286,12 @@ P_SetupLevel
 	P_LoadLineDefs_Hexen (lumpnum+ML_LINEDEFS);
     else
     P_LoadLineDefs (lumpnum+ML_LINEDEFS);
+
+    // translucent 2s textures
+    P_LoadLineDefs2(lumpnum+ML_LINEDEFS);
+    // special sidedefs
+    P_LoadSideDefs2(lumpnum+ML_SIDEDEFS);
+
     // [crispy] (re-)create BLOCKMAP if necessary
     if (!crispy_validblockmap)
     {
@@ -1177,6 +1319,7 @@ P_SetupLevel
 
     // [crispy] remove slime trails
     P_RemoveSlimeTrails();
+    // R_CalcSegsLength();
     // [crispy] fix long wall wobble
     P_SegLengths(false);
 

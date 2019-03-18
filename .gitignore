@@ -45,6 +45,7 @@ STRIFE*.pcx
 .*.swp
 .DS_store
 
+build
 *.bc
 *.wasm
 doom.*

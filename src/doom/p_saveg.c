@@ -1507,7 +1507,7 @@ void P_ArchiveWorld (void)
 	saveg_write16(li->tag);
 	for (j=0 ; j<2 ; j++)
 	{
-	    if (li->sidenum[j] == -1)
+	    if ((short)(li->sidenum[j]) == -1)
 		continue;
 	    
 	    si = &sides[li->sidenum[j]];
@@ -1544,7 +1544,9 @@ void P_UnArchiveWorld (void)
 	sec->lightlevel = saveg_read16();
 	sec->special = saveg_read16();		// needed?
 	sec->tag = saveg_read16();		// needed?
-	sec->specialdata = 0;
+	sec->floordata = 0;
+	sec->ceilingdata = 0;
+	sec->lightingdata = 0;
 	sec->soundtarget = 0;
     }
     
@@ -1556,7 +1558,7 @@ void P_UnArchiveWorld (void)
 	li->tag = saveg_read16();
 	for (j=0 ; j<2 ; j++)
 	{
-	    if (li->sidenum[j] == -1)
+	    if ((short)(li->sidenum[j]) == -1)
 		continue;
 	    si = &sides[li->sidenum[j]];
 	    si->textureoffset = saveg_read16() << FRACBITS;
@@ -1813,7 +1815,7 @@ void P_UnArchiveSpecials (void)
 	    saveg_read_pad();
 	    ceiling = Z_Malloc (sizeof(*ceiling), PU_LEVEL, NULL);
             saveg_read_ceiling_t(ceiling);
-	    ceiling->sector->specialdata = ceiling;
+	    ceiling->sector->ceilingdata = ceiling;
 
 	    if (ceiling->thinker.function.acp1)
 		ceiling->thinker.function.acp1 = (actionf_p1)T_MoveCeiling;
@@ -1826,7 +1828,7 @@ void P_UnArchiveSpecials (void)
 	    saveg_read_pad();
 	    door = Z_Malloc (sizeof(*door), PU_LEVEL, NULL);
             saveg_read_vldoor_t(door);
-	    door->sector->specialdata = door;
+	    door->sector->ceilingdata = door;
 	    door->thinker.function.acp1 = (actionf_p1)T_VerticalDoor;
 	    P_AddThinker (&door->thinker);
 	    break;
@@ -1835,7 +1837,7 @@ void P_UnArchiveSpecials (void)
 	    saveg_read_pad();
 	    floor = Z_Malloc (sizeof(*floor), PU_LEVEL, NULL);
             saveg_read_floormove_t(floor);
-	    floor->sector->specialdata = floor;
+	    floor->sector->floordata = floor;
 	    floor->thinker.function.acp1 = (actionf_p1)T_MoveFloor;
 	    P_AddThinker (&floor->thinker);
 	    break;
@@ -1844,7 +1846,7 @@ void P_UnArchiveSpecials (void)
 	    saveg_read_pad();
 	    plat = Z_Malloc (sizeof(*plat), PU_LEVEL, NULL);
             saveg_read_plat_t(plat);
-	    plat->sector->specialdata = plat;
+	    plat->sector->floordata = plat;
 
 	    if (plat->thinker.function.acp1)
 		plat->thinker.function.acp1 = (actionf_p1)T_PlatRaise;
